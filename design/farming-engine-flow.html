@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>长城守城 · 种田引擎运作流程（v0.7-morale）</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#F5F6F8; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif; color:#1D2129; padding:28px 20px; }
+  .card { max-width:1620px; margin:0 auto; background:#fff; border-radius:16px; padding:28px 32px 20px; box-shadow:0 1px 4px rgba(29,33,41,.06); }
+  .head { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:6px; }
+  .head h1 { font-size:20px; font-weight:600; }
+  .tag { font-size:12px; color:#1664FF; background:#E8F0FF; border-radius:12px; padding:2px 12px; }
+  .tag.new { color:#15803D; background:#E8F8EE; }
+  .sub { font-size:12.5px; color:#86909C; margin-bottom:14px; }
+  .scroll { overflow-x:auto; }
+  svg { min-width:1480px; display:block; }
+  .insight { border-top:1px solid #E5E6EB; margin-top:14px; padding-top:14px; display:flex; gap:32px; flex-wrap:wrap; }
+  .insight div { font-size:12.5px; color:#4E5969; line-height:1.7; flex:1; min-width:260px; }
+  .insight b { color:#1D2129; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="head"><h1>长城守城 · 种田引擎运作流程</h1><span class="tag">TUNING v0.7-morale</span><span class="tag new">+ 民意系统</span><span class="tag">油料系统</span></div>
+  <div class="sub">全部数字唯一来源 TUNING.js（模拟校准 · 未经 playtest）· 一回合 = 10 天 · 6 回合一局 · 蓝=决策与生产 · 五指标模拟全 PASS（分歧 16.8pp）</div>
+  <div class="scroll">
+  <svg viewBox="0 0 1560 1060" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,'PingFang SC','Microsoft YaHei',sans-serif">
+    <defs>
+      <marker id="mB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1664FF"/></marker>
+      <marker id="mO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#B45309"/></marker>
+      <marker id="mG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#15803D"/></marker>
+      <marker id="mP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6D28D9"/></marker>
+      <marker id="mR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#B91C1C"/></marker>
+    </defs>
+
+    <!-- 层容器 -->
+    <rect x="195" y="100" width="1235" height="100" rx="14" fill="#E8F0FF" fill-opacity="0.5" stroke="#1664FF" stroke-width="1.2" stroke-dasharray="6 4"/>
+    <rect x="195" y="255" width="1235" height="120" rx="14" fill="#E6F8F5" fill-opacity="0.55" stroke="#14B8A6" stroke-width="1.2" stroke-dasharray="6 4"/>
+    <rect x="195" y="430" width="1235" height="115" rx="14" fill="#FEF3D6" fill-opacity="0.5" stroke="#F59E0B" stroke-width="1.2" stroke-dasharray="6 4"/>
+    <rect x="195" y="605" width="1235" height="125" rx="14" fill="#F1ECFE" fill-opacity="0.5" stroke="#8B5CF6" stroke-width="1.2" stroke-dasharray="6 4"/>
+    <rect x="195" y="790" width="1235" height="130" rx="14" fill="#F2F3F5" fill-opacity="0.6" stroke="#86909C" stroke-width="1.2" stroke-dasharray="6 4"/>
+
+    <!-- 层标签 pill -->
+    <rect x="30" y="122" width="145" height="56" rx="10" fill="#1664FF"/>
+    <text x="102" y="145" text-anchor="middle" font-size="13" font-weight="600" fill="#fff">① 决策层</text>
+    <text x="102" y="165" text-anchor="middle" font-size="10.5" fill="#fff" opacity="0.85">玩家每回合 6 手</text>
+    <rect x="30" y="287" width="145" height="56" rx="10" fill="#0E8A7C"/>
+    <text x="102" y="310" text-anchor="middle" font-size="13" font-weight="600" fill="#fff">② 生产引擎</text>
+    <text x="102" y="330" text-anchor="middle" font-size="10.5" fill="#fff" opacity="0.85">回合开始自动结算</text>
+    <rect x="30" y="459" width="145" height="56" rx="10" fill="#B45309"/>
+    <text x="102" y="482" text-anchor="middle" font-size="13" font-weight="600" fill="#fff">③ 资源池</text>
+    <text x="102" y="502" text-anchor="middle" font-size="10.5" fill="#fff" opacity="0.85">五大库存</text>
+    <rect x="30" y="632" width="145" height="56" rx="10" fill="#6D28D9"/>
+    <text x="102" y="655" text-anchor="middle" font-size="13" font-weight="600" fill="#fff">④ 出口层</text>
+    <text x="102" y="675" text-anchor="middle" font-size="10.5" fill="#fff" opacity="0.85">消耗与再投入</text>
+    <rect x="30" y="817" width="145" height="56" rx="10" fill="#15803D"/>
+    <text x="102" y="840" text-anchor="middle" font-size="13" font-weight="600" fill="#fff">⑤ 闭环·威胁</text>
+    <text x="102" y="860" text-anchor="middle" font-size="10.5" fill="#fff" opacity="0.85">人回灌 · 民心 · 敌破坏</text>
+
+    <!-- L1 节点 -->
+    <g>
+      <rect x="240" y="115" width="200" height="70" rx="10" fill="#fff" stroke="#1664FF" stroke-width="1.6"/>
+      <text x="340" y="143" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">开田＋选种</text>
+      <text x="340" y="166" text-anchor="middle" font-size="11" fill="#4E5969">40木/块 · 粟或麻</text>
+    </g>
+    <g>
+      <rect x="460" y="115" width="200" height="70" rx="10" fill="#fff" stroke="#1664FF" stroke-width="1.6"/>
+      <text x="560" y="143" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">人口分配</text>
+      <text x="560" y="166" text-anchor="middle" font-size="11" fill="#4E5969">农/木/石/矿 · 决定产效</text>
+    </g>
+    <g>
+      <rect x="720" y="115" width="340" height="70" rx="10" fill="#fff" stroke="#1664FF" stroke-width="1.6"/>
+      <text x="890" y="143" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">建造之手</text>
+      <text x="890" y="166" text-anchor="middle" font-size="11" fill="#4E5969">塔 / 弩炮 / 修墙 / 油坊的优先级</text>
+    </g>
+    <g>
+      <rect x="1090" y="115" width="330" height="70" rx="10" fill="#fff" stroke="#1664FF" stroke-width="1.6"/>
+      <text x="1255" y="143" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">开仓放粮（决策⑥）</text>
+      <text x="1255" y="166" text-anchor="middle" font-size="11" fill="#4E5969">30粮=+10民意 · 每回合限1次</text>
+    </g>
+
+    <!-- L2 节点 -->
+    <g>
+      <rect x="240" y="270" width="200" height="90" rx="10" fill="#E6F8F5" stroke="#14B8A6" stroke-width="1.6"/>
+      <text x="340" y="298" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">农田（≤4人/块）</text>
+      <text x="340" y="320" text-anchor="middle" font-size="10.5" fill="#4E5969">粟：120粮 | 麻：40粮+12铁</text>
+      <text x="340" y="342" text-anchor="middle" font-size="10.5" fill="#0E8A7C">开田=扩容 · 缺人按比例减产</text>
+    </g>
+    <g>
+      <rect x="680" y="270" width="200" height="90" rx="10" fill="#E6F8F5" stroke="#14B8A6" stroke-width="1.6"/>
+      <text x="780" y="298" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">油坊（限1座）</text>
+      <text x="780" y="320" text-anchor="middle" font-size="10.5" fill="#4E5969">被动产油 8油/回合</text>
+      <text x="780" y="342" text-anchor="middle" font-size="10.5" fill="#0E8A7C">80木+30石 · 不占人手</text>
+    </g>
+    <g>
+      <rect x="900" y="270" width="420" height="90" rx="10" fill="#E6F8F5" stroke="#14B8A6" stroke-width="1.6"/>
+      <text x="1110" y="298" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">伐木 · 采石 · 采矿</text>
+      <text x="1110" y="320" text-anchor="middle" font-size="10.5" fill="#4E5969">8木 / 5石 / 5铁 · 每人每回合</text>
+      <text x="1110" y="342" text-anchor="middle" font-size="10.5" fill="#0E8A7C">无人数上限（对比农田容量稀缺）</text>
+    </g>
+
+    <!-- L3 节点 -->
+    <g>
+      <rect x="240" y="455" width="200" height="70" rx="10" fill="#FEF3D6" stroke="#F59E0B" stroke-width="1.6"/>
+      <text x="340" y="488" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">粮仓</text>
+      <text x="340" y="510" text-anchor="middle" font-size="11" fill="#4E5969">引擎的心脏</text>
+    </g>
+    <g>
+      <rect x="460" y="455" width="200" height="70" rx="10" fill="#FEF3D6" stroke="#F59E0B" stroke-width="1.6"/>
+      <text x="560" y="488" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">铁料</text>
+      <text x="560" y="510" text-anchor="middle" font-size="10.5" fill="#4E5969">弩炮瓶颈 · 来源：麻田+采矿</text>
+    </g>
+    <g>
+      <rect x="680" y="455" width="200" height="70" rx="10" fill="#FEF3D6" stroke="#F59E0B" stroke-width="1.6"/>
+      <text x="780" y="488" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">油料</text>
+      <text x="780" y="510" text-anchor="middle" font-size="10.5" fill="#4E5969">火油 · 危险时点火的燃料</text>
+    </g>
+    <g>
+      <rect x="905" y="455" width="190" height="70" rx="10" fill="#FEF3D6" stroke="#F59E0B" stroke-width="1.6"/>
+      <text x="1000" y="488" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">石料</text>
+      <text x="1000" y="510" text-anchor="middle" font-size="10.5" fill="#4E5969">墙耐久唯一来源</text>
+    </g>
+    <g>
+      <rect x="1125" y="455" width="190" height="70" rx="10" fill="#FEF3D6" stroke="#F59E0B" stroke-width="1.6"/>
+      <text x="1220" y="488" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">木料</text>
+      <text x="1220" y="510" text-anchor="middle" font-size="10.5" fill="#4E5969">去向：田 · 塔 · 弩炮 · 油坊</text>
+    </g>
+
+    <!-- L4 节点 -->
+    <g>
+      <rect x="240" y="630" width="200" height="80" rx="10" fill="#F1ECFE" stroke="#8B5CF6" stroke-width="1.6"/>
+      <text x="340" y="662" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">口粮税</text>
+      <text x="340" y="687" text-anchor="middle" font-size="10.5" fill="#4E5969">2粮/人/回合 · 刚性开销</text>
+    </g>
+    <g>
+      <rect x="460" y="630" width="200" height="80" rx="10" fill="#F1ECFE" stroke="#8B5CF6" stroke-width="1.6"/>
+      <text x="560" y="662" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">招居民</text>
+      <text x="560" y="687" text-anchor="middle" font-size="10.5" fill="#4E5969">20粮 = 1人 · 雪球起点</text>
+    </g>
+    <g>
+      <rect x="680" y="630" width="200" height="80" rx="10" fill="#F1ECFE" stroke="#8B5CF6" stroke-width="1.6"/>
+      <text x="780" y="660" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">火攻 · 倾泻</text>
+      <text x="780" y="682" text-anchor="middle" font-size="10" fill="#4E5969">火攻16油：敌攻-35% · 免烧田</text>
+      <text x="780" y="700" text-anchor="middle" font-size="10" fill="#4E5969">倾泻：10油=50防 · 上限30油</text>
+    </g>
+    <g>
+      <rect x="900" y="630" width="420" height="80" rx="10" fill="#F1ECFE" stroke="#8B5CF6" stroke-width="1.6"/>
+      <text x="1110" y="660" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">武备与城防</text>
+      <text x="1110" y="687" text-anchor="middle" font-size="10.5" fill="#4E5969">箭塔100防 · 弩炮260防 · 墙耐久×0.25计入防御 · 修墙1石=8耐久</text>
+    </g>
+
+    <!-- L5 节点 -->
+    <g>
+      <rect x="460" y="815" width="200" height="90" rx="10" fill="#E8F8EE" stroke="#22C55E" stroke-width="1.6"/>
+      <text x="560" y="850" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">人口池</text>
+      <text x="560" y="874" text-anchor="middle" font-size="11" fill="#4E5969">起始 30 人 · 人 = 引擎转速</text>
+    </g>
+    <g>
+      <rect x="700" y="815" width="380" height="90" rx="10" fill="#FFF7ED" stroke="#EA580C" stroke-width="1.8"/>
+      <text x="890" y="843" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">民意（0-100）· 飞轮手刹</text>
+      <text x="890" y="866" text-anchor="middle" font-size="10.5" fill="#EA580C">① &lt;50 全产出×0.8　② &lt;30 逃亡5%人口/回合＋劫粮1.5/人</text>
+      <text x="890" y="888" text-anchor="middle" font-size="10.5" fill="#EA580C">③ &lt;15 农民起义（人口×8攻打自家城防）→ 民意重置25</text>
+    </g>
+    <g>
+      <rect x="1120" y="815" width="240" height="90" rx="10" fill="#FDECEC" stroke="#EF4444" stroke-width="1.6"/>
+      <text x="1240" y="850" text-anchor="middle" font-size="14" font-weight="600" fill="#1D2129">游骑袭扰</text>
+      <text x="1240" y="874" text-anchor="middle" font-size="11" fill="#4E5969">第2/3/4回合 · 25/40/60骑</text>
+    </g>
+
+    <!-- 蓝色：决策与生产 -->
+    <g fill="none" stroke="#1664FF" stroke-width="2.2">
+      <line x1="340" y1="185" x2="340" y2="263" marker-end="url(#mB)"/>
+      <path d="M560,185 L560,225 L380,225 L380,263" marker-end="url(#mB)"/>
+      <path d="M620,185 L620,315 L893,315" marker-end="url(#mB)"/>
+      <line x1="340" y1="360" x2="340" y2="448" marker-end="url(#mB)"/>
+      <path d="M420,360 L420,415 L556,415"/>
+      <line x1="780" y1="360" x2="780" y2="448" marker-end="url(#mB)"/>
+      <line x1="1000" y1="360" x2="1000" y2="448" marker-end="url(#mB)"/>
+      <line x1="1220" y1="360" x2="1220" y2="448" marker-end="url(#mB)"/>
+      <path d="M920,360 L920,415 L788,415 A8,8 0 0 0 772,415 L564,415"/>
+      <line x1="560" y1="415" x2="560" y2="448" marker-end="url(#mB)"/>
+    </g>
+    <circle cx="560" cy="415" r="3.5" fill="#1664FF"/>
+
+    <!-- 橙色：粮食出口 -->
+    <g fill="none" stroke="#D97706" stroke-width="2.2">
+      <line x1="340" y1="525" x2="340" y2="623" marker-end="url(#mO)"/>
+      <path d="M400,525 L400,570 L480,570 L480,623" marker-end="url(#mO)"/>
+      <path d="M340,710 L340,860 L453,860" marker-end="url(#mO)"/>
+    </g>
+
+    <!-- 紫色：军备与油料消耗 -->
+    <g fill="none" stroke="#8B5CF6" stroke-width="2.2">
+      <line x1="780" y1="185" x2="780" y2="263" marker-end="url(#mP)"/>
+      <path d="M1060,150 L1110,150 L1110,623" marker-end="url(#mP)"/>
+      <path d="M560,525 L560,585 L920,585 L920,623" marker-end="url(#mP)"/>
+      <line x1="780" y1="525" x2="780" y2="623" marker-end="url(#mP)"/>
+      <line x1="1000" y1="525" x2="1000" y2="623" marker-end="url(#mP)"/>
+      <line x1="1220" y1="525" x2="1220" y2="623" marker-end="url(#mP)"/>
+      <line x1="1240" y1="710" x2="1240" y2="808" marker-end="url(#mP)"/>
+      <path d="M780,710 L780,755 L1150,755 L1150,808" marker-end="url(#mP)"/>
+    </g>
+
+    <!-- 绿色：人口飞轮 -->
+    <path d="M560,905 L560,940 L1450,940 L1450,70 L560,70 L560,108" fill="none" stroke="#22C55E" stroke-width="2.6" marker-end="url(#mG)"/>
+
+    <!-- 红色：威胁（干线-枝线） -->
+    <path d="M1240,905 L1240,965 L185,965 L185,490 L233,490" fill="none" stroke="#EF4444" stroke-width="2.4" marker-end="url(#mR)"/>
+    <path d="M185,490 L185,310 L233,310" fill="none" stroke="#EF4444" stroke-width="2.2" marker-end="url(#mR)"/>
+    <circle cx="185" cy="490" r="3.5" fill="#EF4444"/>
+
+    <!-- 红色：民意负反馈 [v0.7] -->
+    <line x1="700" y1="860" x2="668" y2="860" stroke="#EF4444" stroke-width="2.2" marker-end="url(#mR)"/>
+    <path d="M1040,815 L1040,745 L1160,745 L1160,710" fill="none" stroke="#EF4444" stroke-width="2.2" marker-end="url(#mR)"/>
+    <line x1="1120" y1="860" x2="1088" y2="860" stroke="#EF4444" stroke-width="2.2" marker-end="url(#mR)"/>
+
+    <!-- 橙色：开仓放粮（右走廊下行）[v0.7] -->
+    <path d="M1255,185 L1255,215 L1395,215 L1395,796 L1060,796 L1060,815" fill="none" stroke="#D97706" stroke-width="2.2" marker-end="url(#mO)"/>
+
+    <!-- 边标签 -->
+    <g font-size="11" paint-order="stroke" stroke="#fff" stroke-width="3.5" stroke-linejoin="round">
+      <text x="348" y="252" fill="#1664FF">开新田 40木</text>
+      <text x="470" y="218" text-anchor="middle" fill="#1664FF">农耕人手</text>
+      <text x="612" y="258" text-anchor="end" fill="#1664FF">木/石/矿工</text>
+      <text x="352" y="406" fill="#1664FF">粟120粮 | 麻40粮</text>
+      <text x="488" y="408" text-anchor="middle" fill="#1664FF">麻+12铁</text>
+      <text x="792" y="412" fill="#1664FF">8油/回合</text>
+      <text x="850" y="408" text-anchor="middle" fill="#1664FF">5铁/人</text>
+      <text x="1012" y="412" fill="#1664FF">5石/人</text>
+      <text x="1220" y="407" text-anchor="middle" fill="#1664FF">8木/人</text>
+      <text x="352" y="580" fill="#B45309">2粮/人·回合</text>
+      <text x="440" y="562" text-anchor="middle" fill="#B45309">20粮=1人</text>
+      <text x="740" y="578" text-anchor="middle" fill="#6D28D9">弩炮 30铁</text>
+      <text x="792" y="578" fill="#6D28D9">火攻·倾泻</text>
+      <text x="1012" y="580" fill="#6D28D9">1石=8耐久</text>
+      <text x="1232" y="580" fill="#6D28D9">塔 60木</text>
+      <text x="1118" y="390" fill="#6D28D9">建造优先级</text>
+      <text x="1248" y="765" fill="#6D28D9">城防值 vs 敌攻</text>
+      <text x="965" y="748" text-anchor="middle" fill="#6D28D9">火攻压制袭扰</text>
+      <text x="396" y="852" text-anchor="middle" fill="#B45309">供养</text>
+      <text x="568" y="765" fill="#15803D">人口+1</text>
+      <text x="1005" y="62" text-anchor="middle" fill="#15803D" font-weight="600" font-size="12">人口飞轮：粮 → 人 → 更多工手 —— 模拟中的隐性最强引擎</text>
+      <text x="700" y="957" text-anchor="middle" fill="#B91C1C" font-weight="600">破防代价：抢粮 2粮/骑 ＋ 烧田 1块 ＋ 墙损 ＋ 民意-10/-8每田（火攻可保田）</text>
+      <text x="178" y="405" text-anchor="end" fill="#B91C1C">威胁</text>
+      <text x="684" y="842" text-anchor="middle" fill="#B91C1C" font-size="10">逃亡+劫粮</text>
+      <text x="1170" y="732" fill="#B91C1C" font-size="10">起义军 人口×8攻</text>
+      <text x="1104" y="918" text-anchor="middle" fill="#B91C1C" font-size="10">破防-10 · 烧田-8/田</text>
+      <text x="1388" y="510" text-anchor="end" fill="#B45309" font-size="10.5">放粮 +10民意</text>
+    </g>
+
+    <!-- 图例 -->
+    <g font-size="11.5" fill="#4E5969">
+      <line x1="220" y1="1004" x2="252" y2="1004" stroke="#1664FF" stroke-width="2.4"/><text x="260" y="1008">决策·生产流</text>
+      <line x1="392" y1="1004" x2="424" y2="1004" stroke="#D97706" stroke-width="2.4"/><text x="432" y="1008">粮食出口（口粮税＋招人＋放粮）</text>
+      <line x1="700" y1="1004" x2="732" y2="1004" stroke="#22C55E" stroke-width="2.6"/><text x="740" y="1008">人口飞轮·回灌</text>
+      <line x1="885" y1="1004" x2="917" y2="1004" stroke="#8B5CF6" stroke-width="2.4"/><text x="925" y="1008">军备与油料消耗</text>
+      <line x1="1055" y1="1004" x2="1087" y2="1004" stroke="#EF4444" stroke-width="2.4"/><text x="1095" y="1008">威胁·负反馈（外敌打引擎 · 民心咬飞轮）</text>
+    </g>
+    <text x="220" y="1040" font-size="11.5" fill="#86909C">引擎判读：铁=常驻防御，油=主动技+总攻爆发，民意=飞轮手刹——三道闸对应「囤油护田、放粮买人心、修墙护民」· 城破 = 重开本关</text>
+  </svg>
+  </div>
+  <div class="insight">
+    <div><b>民意系统（本次新增）</b><br>飞轮手刹：①民意&lt;50 全产出×0.8 → ②&lt;30 治安恶化（逃亡5%人口/回合＋流民劫粮1.5/人）→ ③&lt;15 农民起义（人口×8攻打自家城防，破防毁墙烧田，民意重置25）。唯一主动回复=开仓放粮（30粮=+10民意/回合，限1次）——粮的第4个出口：招人/修墙/护城之外还要买人心。</div>
+    <div><b>油料系统</b><br>油坊 80木+30石（限1座）→ 被动产油 8/回合 → 火攻（16油：袭扰敌攻-35%+免疫烧田）或总攻倾泻（10油=50防，上限30油）。油在终局永远有用，不存在废油。</div>
+    <div><b>模拟校准 v0.7</b><br>五指标全 PASS（分歧 16.8pp）。农业流 2.86 次放粮/局、起义 13%→0%；军备流民意恰好贴 50 阶段一门槛活；裸墙 100% 局爆发起义——民变先于外敌杀死摆烂者。正常经营零起义：脚本太乖，真人会不会踩进阶段二只能 demo 里验。</div>
+  </div>
+</div>
+</body>
+</html>
