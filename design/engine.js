@@ -1,4 +1,4 @@
-// engine.js —— 长城守城 · 规则引擎（demo 与 simulate 的唯一规则来源）v0.7.1-starve-fix
+// engine.js —— 长城守城 · 规则引擎（demo 与 simulate 的唯一规则来源）v0.9-pop-eff
 //
 // 为什么要有这个文件：simulate.js（数学验证）与 demo（手感验证）如果各自实现一遍结算，
 // 两边迟早分叉，模拟就白跑了。规则只允许在这里改一次，两边都调同一份。
@@ -58,6 +58,17 @@
     const defensePower = (s) =>
       s.towers * T.TOWER.DEF + s.ballistas * T.BALLISTA.DEF + s.wallHP * T.WALL_DEF_SHARE
 
+    // ———— 人口效率权重 [v0.9] ————
+    // 人少精干(≤20 全员0.9) / 标准(≤45 为1.0) / 超编平滑加罚(每超1人+0.04，封顶2.5)。
+    // 只乘工产不乘田产（田有 WORK_CAP 物理上限）；口粮照吃满额——超编者吃满额、干半活。
+    // 权重=1 时零开销路径，demo 里 UI 可用它显示"当前人均效率 115%"。
+    function popWeight(pop) {
+      const P = T.POP_EFF
+      if (pop <= P.SMALL) return P.SMALL_W
+      if (pop <= P.BASE) return 1.0
+      return Math.min(P.MAX_W, 1.0 + (pop - P.BASE) * P.SLOPE)
+    }
+
     // ———— 生产结算 ————
     // 顺序：田产 → 工产 → 油坊 → 口粮（口粮在最后，断粮判定要在扣完之后）
     function produce(s, alloc) {
@@ -72,9 +83,11 @@
           i += T.FIELD.YIELD_MA_IRON * eff * jit(1, 0.1)
         }
       }
-      const w = alloc.wood * T.WORKER.WOOD
-      const st = alloc.stone * T.WORKER.STONE
-      const ir = alloc.iron * T.WORKER.IRON + i
+      // [v0.9] 人口效率权重乘工产：超编者产出缩水（口粮照吃满额）——"第N个人还值不值20粮"成为真决策
+      const pw = popWeight(s.pop)
+      const w = alloc.wood * T.WORKER.WOOD * pw
+      const st = alloc.stone * T.WORKER.STONE * pw
+      const ir = alloc.iron * T.WORKER.IRON * pw + i
       const eat = s.pop * T.POP.EAT_PER_TURN
       s.grain += g
       s.wood += w
@@ -86,7 +99,9 @@
       // 日志文案带单位：没有单位的数字玩家读不懂（"石 +20" 是石料还是粮食？）
       s.log.push(
         `收成：粮 +${r1(g)} 斛　木材 +${r1(w)} 根　石料 +${r1(st)} 块　铁 +${r1(ir)} 斤　口粮 -${r1(eat)} 斛` +
-          (eff < 1 ? `（耕作效率 ${Math.round(eff * 100)}%，人不够田在闲）` : '')
+          (eff < 1 ? `（耕作效率 ${Math.round(eff * 100)}%，人不够田在闲）` : '') +
+          (pw > 1.001 ? `（人手超编 ${Math.round((pw - 1) * 100)}% 损耗）` : '') +
+          (pw < 0.999 ? `（人少精干 ${Math.round((1 - pw) * 100)}% 加成）` : '')
       )
       if (s.press) s.log.push(`油坊产油 +${T.OIL.OIL_PER_TURN} 桶`)
 
@@ -255,6 +270,7 @@
       jit,
       newState,
       defensePower,
+      popWeight,
       produce,
       tryBuild,
       buySettlers,

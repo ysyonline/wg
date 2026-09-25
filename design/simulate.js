@@ -1,4 +1,4 @@
-// simulate.js —— Monte Carlo 数值模拟 v0.7.1（规则全部来自 engine.js）
+// simulate.js —— Monte Carlo 数值模拟 v0.9（规则全部来自 engine.js）
 // 跑法: node simulate.js
 // 回答三个问题：
 //   1) 可赢性 —— 玩得好的风格能不能守住第60天总攻（存活率≥70% 为 PASS）
@@ -101,6 +101,29 @@ const strategies = {
     E.buySettlers(s, 150)
     E.repair(s)
   },
+  // E 压榨流 [v0.9 探针]：真人贪心打法——有粮就招人，一点余粮不留（keepGrain=0）。
+  // 验证目标：人口效率权重下，"无脑招人"是否还能滚雪球；断粮→民意链条是否咬人。
+  // 判读：存活率应显著低于均衡流（否则权重无效）；断粮回合>0 且起义>0（否则民意无牙）。
+  压榨流(s, t) {
+    E.produce(s, {
+      farm: Math.min(Math.round(s.pop * 0.6), s.fields.length * TUNING.FIELD.WORK_CAP),
+      wood: Math.round(s.pop * 0.25),
+      stone: Math.round(s.pop * 0.1),
+      iron: Math.round(s.pop * 0.05),
+    })
+    while (s.fields.length < 6 && E.tryBuild(s, { wood: TUNING.FIELD.COST_WOOD }))
+      s.fields.push(s.fields.length % 2 === 0 ? 'ma' : 'su')
+    let builds = 2
+    while (builds-- > 0) {
+      if (!s.press && E.tryBuild(s, { wood: TUNING.OIL.PRESS_COST_WOOD, stone: TUNING.OIL.PRESS_COST_STONE })) s.press = true
+      else if (s.towers < 4 && E.tryBuild(s, { wood: TUNING.TOWER.COST_WOOD, iron: TUNING.TOWER.COST_IRON })) s.towers++
+      else break
+    }
+    s.fire = s.press && s.oil >= TUNING.OIL.FIRE_COST
+    E.buySettlers(s, 0) // 贪心核心：粮全变人，不留口粮缓冲
+    E.openGranary(s, 40, 0) // 民意告急才放粮，且不留保底——压榨到底
+    E.repair(s)
+  },
 }
 
 // ———— 单局 ————
@@ -122,7 +145,7 @@ function run(name) {
 const report = {}
 for (const name of Object.keys(strategies)) {
   let clean = 0, barely = 0, lose = 0, marginSum = 0, wallSum = 0, presses = 0, fires = 0
-  let moraleSum = 0, granaries = 0, uprisings = 0, starved = 0
+  let moraleSum = 0, granaries = 0, uprisings = 0, starved = 0, popSum = 0, weightSum = 0
   for (let i = 0; i < RUNS; i++) {
     const { result, s } = run(name)
     if (result === 'clean') clean++
@@ -136,6 +159,8 @@ for (const name of Object.keys(strategies)) {
     granaries += s.granaries
     uprisings += s.uprisings
     starved += s.starvedTurns
+    popSum += s.pop
+    weightSum += E.popWeight(s.pop)
   }
   const survival = ((clean + barely) / RUNS) * 100
   report[name] = {
@@ -151,19 +176,21 @@ for (const name of Object.keys(strategies)) {
     avgGranaries: granaries / RUNS,
     uprisingPct: (uprisings / RUNS) * 100,
     avgStarvedTurns: starved / RUNS,
+    avgPop: popSum / RUNS,
+    avgWeight: weightSum / RUNS,
   }
 }
 
 console.log(`=== 长城守城 v${TUNING.VERSION} · Monte Carlo ×${RUNS}（engine ${E.jitter ? 'jitter on' : 'jitter off'}）===`)
-console.log('风格\t存活%\t正面扛住%\t惨胜%\t城破%\t总攻防御富余\t存活者平均剩余墙耐久\t油坊%\t火攻均值\t期末民意\t放粮次\t起义%\t断粮回合')
+console.log('风格\t存活%\t正面扛住%\t惨胜%\t城破%\t总攻防御富余\t存活者平均剩余墙耐久\t油坊%\t火攻均值\t期末民意\t放粮次\t起义%\t断粮回合\t期末人口\t效率权重')
 for (const [name, r] of Object.entries(report)) {
   console.log(
-    `${name}\t${r.survival.toFixed(1)}\t${r.cleanPct.toFixed(1)}\t\t${r.barelyPct.toFixed(1)}\t${r.losePct.toFixed(1)}\t${Math.round(r.avgMargin)}\t\t${Math.round(r.avgWallLeft)}\t\t${r.pressPct.toFixed(0)}\t${r.avgFires.toFixed(2)}\t\t${r.avgMorale.toFixed(0)}\t\t${r.avgGranaries.toFixed(2)}\t${r.uprisingPct.toFixed(1)}\t${r.avgStarvedTurns.toFixed(2)}`
+    `${name}\t${r.survival.toFixed(1)}\t${r.cleanPct.toFixed(1)}\t\t${r.barelyPct.toFixed(1)}\t${r.losePct.toFixed(1)}\t${Math.round(r.avgMargin)}\t\t${Math.round(r.avgWallLeft)}\t\t${r.pressPct.toFixed(0)}\t${r.avgFires.toFixed(2)}\t\t${r.avgMorale.toFixed(0)}\t\t${r.avgGranaries.toFixed(2)}\t${r.uprisingPct.toFixed(1)}\t${r.avgStarvedTurns.toFixed(2)}\t${Math.round(r.avgPop)}\t\t${r.avgWeight.toFixed(2)}`
   )
 }
 
-// ———— 三指标判读（裸墙是对照组，不参与风格排名）————
-const entries = Object.entries(report).filter(([n]) => n !== '裸墙')
+// ———— 三指标判读（裸墙/压榨流是对照组，不参与风格排名）————
+const entries = Object.entries(report).filter(([n]) => n !== '裸墙' && n !== '压榨流')
 const best = entries.reduce((a, b) => (b[1].survival > a[1].survival ? b : a))
 const worst = entries.reduce((a, b) => (b[1].survival < a[1].survival ? b : a))
 const spread = best[1].survival - worst[1].survival
@@ -197,3 +224,19 @@ if (!anyUprising)
   console.log('  ⚠ 正常经营全风格零起义：脚本太乖，民意可能对模拟无感——demo 里重点观察真人会不会踩进阶段二')
 if (naked.uprisingPct >= 50)
   console.log(`  ✓ 民变先于外敌杀死摆烂者：裸墙起义率 ${naked.uprisingPct.toFixed(0)}%——不经营内政的死法比城破更早`)
+
+// ———— 压榨流专项判读 [v0.9] ————
+// 它是"无脑招人"打法的数学化身，验证两件事：①人口效率权重咬不咬人 ②断粮→民意链条有没有牙
+const sq = report['压榨流']
+console.log('\n—— 压榨流判读（无脑招人探针）——')
+console.log(
+  `存活率  : ${sq.survival.toFixed(1)}%（vs 均衡流 ${report['均衡流'].survival.toFixed(1)}%）。${
+    sq.survival < report['均衡流'].survival - 10 ? 'PASS——贪心招人被惩罚' : 'FAIL——权重没咬住，无脑招人仍是好策略'
+  }`
+)
+console.log(
+  `断粮回合: ${sq.avgStarvedTurns.toFixed(2)}。${sq.avgStarvedTurns > 0 ? '有——压榨流真的会饿' : '无——keepGrain=0 仍不断粮，口粮压力形同虚设'}`
+)
+console.log(
+  `起义率  : ${sq.uprisingPct.toFixed(1)}%。${sq.uprisingPct > 0 ? '有——民意咬到了贪心者' : '无——民意对贪心打法无感，STARVE_HIT 需加压'}`
+)
