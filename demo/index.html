@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>长城守城 · demo v0.7.1</title>
+<style>
+  /* 题材色板：夯土 / 砖灰 / 烽烟。刻意不玩渐变紫，长城不是赛博朋克。 */
+  :root{
+    --bg:#0e1015; --panel:#16191f; --panel2:#1c2029; --line:#282d38;
+    --ink:#e6e8ee; --dim:#8f97a6; --faint:#5f6878;
+    --gold:#d6ab55; --grain:#dfc070; --wood:#b07a4e; --stone:#98a1ac; --iron:#7f93b5;
+    --oil:#cf8a3c; --hp:#5b9fd6; --morale:#6fcf97; --danger:#d9584f; --ok:#6fcf97;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.55 "PingFang SC","Microsoft YaHei",system-ui,sans-serif;}
+  .wrap{max-width:1000px;margin:0 auto;padding:16px 16px 40px}
+  h1{font-size:17px;margin:0 0 2px;letter-spacing:.5px}
+  .sub{color:var(--faint);font-size:12px;margin-bottom:14px}
+
+  .topbar{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:10px}
+  .turn{font-size:15px;font-weight:600}
+  .turn b{color:var(--gold);font-variant-numeric:tabular-nums}
+  .intel{font-size:13px;padding:3px 10px;border-radius:3px;background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
+  .intel.hot{border-color:#6b3b34;background:#2a1a17;color:#e79b8f}
+
+  /* 威胁对照条：把"防御 350"翻译成"挡不挡得住、还差几座塔" */
+  .threat{background:var(--panel);border:1px solid var(--line);border-radius:5px;
+    padding:8px 12px;margin-bottom:10px;display:flex;flex-direction:column;gap:6px}
+  .trow{display:flex;align-items:center;gap:10px;font-size:13px;flex-wrap:wrap}
+  .trow .who{color:var(--dim);min-width:150px}
+  .trow .vs{color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums}
+  .trow .verdict{font-weight:600;font-variant-numeric:tabular-nums}
+  .trow .verdict.ok{color:var(--ok)}
+  .trow .verdict.bad{color:var(--danger)}
+  .trow .todo{color:var(--gold);font-size:12px}
+  .trow.assault{border-top:1px solid var(--line);padding-top:6px}
+  .bar{height:4px;background:#22262f;border-radius:2px;flex:1;min-width:80px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--hp)}
+  .bar i.bad{background:var(--danger)}
+
+  .res{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:5px 10px;
+    font-variant-numeric:tabular-nums;display:flex;gap:6px;align-items:baseline;cursor:help}
+  .chip .k{color:var(--dim);font-size:12px}
+  .chip .v{font-weight:600}
+  .chip .r{color:var(--faint);font-size:11px}
+  .chip .u{color:var(--faint);font-size:11px}
+
+  /* 指标说明：所有数字的单位与用途都在这里，全部由 TUNING 派生，不手写第二份 */
+  .guide{background:var(--panel);border:1px solid var(--line);border-radius:5px;
+    padding:8px 12px;margin-bottom:10px;font-size:12px}
+  .guide summary{cursor:pointer;color:var(--dim);outline:none}
+  .guide table{width:100%;border-collapse:collapse;margin-top:8px}
+  .guide td{padding:3px 6px;color:var(--dim);vertical-align:top}
+  .guide td.gk{color:var(--ink);white-space:nowrap;width:132px}
+  .chip.grain .v{color:var(--grain)} .chip.wood .v{color:var(--wood)}
+  .chip.stone .v{color:var(--stone)} .chip.iron .v{color:var(--iron)}
+  .chip.oil .v{color:var(--oil)} .chip.wall .v{color:var(--hp)} .chip.morale .v{color:var(--morale)}
+
+  canvas{width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:5px;background:#11141b}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:10px 12px}
+  .panel h3{margin:0 0 8px;font-size:13px;color:var(--dim);font-weight:600;
+    display:flex;justify-content:space-between;align-items:center}
+  .hint{color:var(--faint);font-weight:400;font-size:12px}
+
+  .alloc{display:flex;flex-direction:column;gap:6px}
+  .row{display:grid;grid-template-columns:52px 1fr 34px;align-items:center;gap:8px}
+  .row .n{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
+  .row .lab{font-size:12px;color:var(--dim)}
+  input[type=range]{width:100%;accent-color:#8a6d3a}
+
+  .btns{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+  button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+    border-radius:4px;padding:5px 9px;font-size:12px;cursor:pointer;font-family:inherit}
+  button:hover:not(:disabled){border-color:#4a5261;background:#232833}
+  button:disabled{opacity:.35;cursor:not-allowed}
+  button.on{border-color:#7a5c2a;background:#2e2415;color:var(--gold)}
+  button.danger{border-color:#6b3b34}
+  button.primary{background:#3a2f18;border-color:#7a5c2a;color:var(--gold);
+    font-size:14px;font-weight:600;padding:9px 20px}
+  button.primary:hover:not(:disabled){background:#4a3c1e}
+  button .c{color:var(--faint)}
+  button .m{color:var(--gold)}
+
+  #plans{list-style:none;margin:0;padding:0;font-size:12px;color:var(--dim);min-height:20px}
+  #plans li{padding:2px 0;display:flex;justify-content:space-between}
+  #plans li span{color:var(--gold)}
+  #plans li.after{display:block;border-top:1px solid var(--line);margin-top:5px;padding-top:5px;color:var(--gold)}
+  .cmp{display:inline-block;margin-right:10px;color:var(--gold);font-variant-numeric:tabular-nums}
+  #log{font-size:12px;line-height:1.7;color:var(--dim);max-height:220px;overflow:auto}
+  #log .t{color:var(--gold);margin-top:6px;display:block}
+  #log .warn{color:#e79b8f}
+  #log .good{color:var(--ok)}
+
+  .footer{display:flex;gap:10px;align-items:center;margin-top:14px}
+
+  .overlay{position:fixed;inset:0;background:rgba(8,9,12,.86);display:flex;
+    align-items:center;justify-content:center;padding:20px;z-index:9}
+  .overlay.hidden{display:none}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    padding:22px 26px;max-width:460px;width:100%}
+  .card h2{margin:0 0 6px;font-size:20px}
+  .card .why{color:var(--dim);font-size:13px;margin-bottom:14px}
+  .card table{width:100%;font-size:13px;border-collapse:collapse}
+  .card td{padding:3px 0;color:var(--dim)}
+  .card td:last-child{text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
+  .card .act{margin-top:16px;display:flex;gap:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>长城守城</h1>
+  <div class="sub">
+    规则来自 <code>design/engine.js</code>（与 simulate.js 同一份）· 数值来自 <code>design/TUNING.js</code> · 零随机：每个数字都能被玩家学会
+  </div>
+
+  <div class="topbar">
+    <div class="turn">第 <b id="turn">1</b> / <b id="totalTurns">6</b> 回合 · 第 <b id="day">1</b>–<b id="day2">10</b> 天</div>
+    <div class="intel" id="intel">—</div>
+  </div>
+
+  <div class="threat" id="threat"></div>
+
+  <div class="res" id="res"></div>
+
+  <details class="guide">
+    <summary>指标与单位说明 — 每个数字是什么、能干嘛（悬停资源条也能看）</summary>
+    <table id="guide"></table>
+  </details>
+
+  <canvas id="scene" width="960" height="300"></canvas>
+
+  <div class="grid">
+    <section class="panel">
+      <h3>人口分配 <span class="hint" id="idle"></span></h3>
+      <div class="alloc" id="alloc"></div>
+    </section>
+
+    <section class="panel">
+      <h3>本回合指令 <button id="clearPlans" style="padding:2px 6px">清空</button></h3>
+      <div class="btns" id="buildBtns"></div>
+      <div class="btns" id="actBtns"></div>
+      <ul id="plans"></ul>
+    </section>
+
+    <section class="panel">
+      <h3>事件播报</h3>
+      <div id="log"></div>
+    </section>
+  </div>
+
+  <div class="footer">
+    <button id="end" class="primary">结束回合 · 快进 10 天</button>
+    <button id="restart">重开一局</button>
+    <span class="hint" id="footHint"></span>
+  </div>
+</div>
+
+<div class="overlay hidden" id="over">
+  <div class="card">
+    <h2 id="ovTitle">—</h2>
+    <div class="why" id="ovWhy">—</div>
+    <table id="ovTable"></table>
+    <div class="act"><button class="primary" id="ovAgain">再来一局</button></div>
+  </div>
+</div>
+
+<script src="../design/TUNING.js"></script>
+<script src="../design/engine.js"></script>
+<script>
+// ————————————————————————————————————————————————
+// demo v0.7.1：只负责「输入 → 调引擎 → 呈现」，不含任何游戏规则数字。
+// 抖动关闭（jitter:false）：手感验证阶段要的是可学习的因果，不是骰子。
+//
+// 这一版改的是反馈通道，不是机制。骨架版的教训是：玩家看到「防御 350」不知道要挡什么、
+// 够不够、差多少——于是所有参数都是噪音。修法是把每条数字都挂上参照物：
+//   ① 威胁对照条：敌攻 vs 我方防御，缺口直接换算成「还差几座箭塔」；
+//   ② 敌人在城外按回合逼近，安全期也能看见它一天天变近；
+//   ③ 结算从一行日志变成一次冲锋演出（撞墙掉血 / 被箭雨打散）。
+// ————————————————————————————————————————————————
+const E = Engine.createEngine({ jitter: false })
+const T = E.TUNING
+const NO_ANIM = typeof window !== 'undefined' && window.__NO_ANIM__ // 冒烟脚本用：跳过动画
+
+const $ = (id) => document.getElementById(id)
+const cv = $('scene'), ctx = cv.getContext('2d')
+const W = cv.width, H = cv.height, GROUND = 214, WALL_X = 476, WALL_W = 34
+const RAMPART = WALL_X - 58 // 骑兵冲到墙前停下的位置
+
+let s = null, turn = 1, alloc = null, plans = [], granaryUsed = false
+let finished = false, busy = false
+let logLines = []
+
+// 演出状态：由动画循环写入，drawScene 读取
+const fx = { charge: -1, riders: 0, assault: false, shake: 0, flash: 0, routed: 0, floats: [], day: 0, skip: false }
+
+// ———— 动作表 ————
+// run(st) 接受状态参数：真实执行传 s，预览传影子状态——这样「点了会怎样」能当场算出来给玩家看。
+// 每个动作都标注「≈ 挡几骑」，把抽象防御值翻译成敌军人头——参数因此有了参照物。
+const ACTIONS = [
+  { key:'fsu', label:'开田·粟', cost:{wood:T.FIELD.COST_WOOD}, gain:'+1 块粟田',
+    tip:`+1 块粟田（满员产粮 ${T.FIELD.YIELD_SU_GRAIN} 斛/回合）——粮用来招人、放粮`, run:(st)=>st.fields.push('su') },
+  { key:'fma', label:'开田·麻', cost:{wood:T.FIELD.COST_WOOD}, gain:'+1 块麻田',
+    tip:`+1 块麻田（粮 ${T.FIELD.YIELD_MA_GRAIN} + 铁 ${T.FIELD.YIELD_MA_IRON} 斤/回合）——铁是弩炮的瓶颈`, run:(st)=>st.fields.push('ma') },
+  { key:'tower', label:'箭塔', cost:{wood:T.TOWER.COST_WOOD, iron:T.TOWER.COST_IRON}, gain:`防御力 +${T.TOWER.DEF} 点`,
+    tip:`常驻防御力 +${T.TOWER.DEF} 点 ≈ 挡下 ${Math.round(T.TOWER.DEF / T.RAID.ATK_PER_RIDER)} 个游骑`, run:(st)=>st.towers++ },
+  { key:'ball', label:'弩炮', cost:{wood:T.BALLISTA.COST_WOOD, iron:T.BALLISTA.COST_IRON}, gain:`防御力 +${T.BALLISTA.DEF} 点`,
+    tip:`常驻防御力 +${T.BALLISTA.DEF} 点 ≈ 挡下 ${Math.round(T.BALLISTA.DEF / T.RAID.ATK_PER_RIDER)} 个游骑，吃铁`, run:(st)=>st.ballistas++ },
+  { key:'press', label:'油坊', cost:{wood:T.OIL.PRESS_COST_WOOD, stone:T.OIL.PRESS_COST_STONE}, gain:`产油 +${T.OIL.OIL_PER_TURN} 桶/回合`,
+    tip:`每回合产油 +${T.OIL.OIL_PER_TURN} 桶（限 1 座）——油能火攻保田，也能在总攻倾泻成防御力`, run:(st)=>{st.press=true},
+    enabled:()=>!s.press },
+  { key:'set1', label:'招居民 +1', cost:{grain:T.POP.GRAIN_PER_SETTLER}, gain:'+1 人（可派去干活）',
+    tip:`+1 人，口粮 +${T.POP.EAT_PER_TURN} 斛/回合——人多才能同时种田和伐木`, run:(st)=>{st.pop++} },
+  { key:'set5', label:'招居民 +5', cost:{grain:T.POP.GRAIN_PER_SETTLER*5}, gain:'+5 人（可派去干活）',
+    tip:`+5 人，口粮 +${T.POP.EAT_PER_TURN*5} 斛/回合`, run:(st)=>{st.pop+=5} },
+  // 修墙做即时动作而不是排队动作：队列是「先扣资源再执行」，墙满时会白扣石料。
+  { key:'fix10', label:'修墙(10块)', cost:{stone:1}, immediate:true, gain:`城墙 +${10*T.WALL.REPAIR_HP_PER_STONE} 耐久`,
+    tip:`至多 10 块石料 = ${10*T.WALL.REPAIR_HP_PER_STONE} 点城墙耐久 = ${Math.round(10*T.WALL.REPAIR_HP_PER_STONE*T.WALL_DEF_SHARE)} 点防御力`,
+    enabled:()=>s.wallHP < T.WALL.HP && s.stone >= 1,
+    run:(st)=>{
+      const need = Math.ceil((T.WALL.HP - st.wallHP) / T.WALL.REPAIR_HP_PER_STONE)
+      const used = E.repair(st, Math.min(10, need))
+      if (used) pushLog(`修墙：-${used} 块石料 → 城墙耐久 +${used * T.WALL.REPAIR_HP_PER_STONE}`, 'good')
+    } },
+  { key:'fixall', label:'修墙(修满)', cost:{stone:1}, immediate:true, gain:'城墙耐久补满',
+    tip:'有多少石料修多少（不超过缺口）',
+    enabled:()=>s.wallHP < T.WALL.HP && s.stone >= 1,
+    run:(st)=>{
+      const used = E.repair(st)
+      if (used) pushLog(`修墙：-${used} 块石料 → 城墙耐久 +${used * T.WALL.REPAIR_HP_PER_STONE}`, 'good')
+    } },
+]
+
+// ———— 单位：所有数字必须带单位，否则「25」是人是马是血，玩家只能猜 ————
+const RES_CN = { grain:'粮', wood:'木材', stone:'石料', iron:'铁', oil:'火油' }
+const RES_UNIT = { grain:'斛', wood:'根', stone:'块', iron:'斤', oil:'桶', pop:'人' }
+const RES_USE = {
+  grain:`口粮 ${T.POP.EAT_PER_TURN} 斛/人·回合 · 招人 ${T.POP.GRAIN_PER_SETTLER} 斛/人 · 放粮 ${T.MORALE.GRANARY_COST_GRAIN} 斛`,
+  wood:`伐木 ${T.WORKER.WOOD} 根/人·回合 · 开田 ${T.FIELD.COST_WOOD} · 箭塔 ${T.TOWER.COST_WOOD} · 弩炮 ${T.BALLISTA.COST_WOOD} · 油坊 ${T.OIL.PRESS_COST_WOOD}`,
+  stone:`采石 ${T.WORKER.STONE} 块/人·回合 · 修墙 1 块 = ${T.WALL.REPAIR_HP_PER_STONE} 点耐久 · 油坊 ${T.OIL.PRESS_COST_STONE}`,
+  iron:`采矿 ${T.WORKER.IRON} 斤/人·回合 · 麻田 ${T.FIELD.YIELD_MA_IRON} 斤/块·回合 · 箭塔 ${T.TOWER.COST_IRON} · 弩炮 ${T.BALLISTA.COST_IRON}`,
+  oil:`油坊产 ${T.OIL.OIL_PER_TURN} 桶/回合 · 火攻 ${T.OIL.FIRE_COST} 桶（敌攻 ×${T.OIL.FIRE_ATK_MULT}，田不会被烧）· 总攻自动倾泻 10 桶 = ${T.OIL.ASSAULT_PER10} 点防御力`,
+  pop:'干活的人：农田 / 伐木 / 采石 / 采矿',
+  morale:`民心 0–100。<${T.MORALE.STAGE1_MORALE} 全产出 ×${T.MORALE.STAGE1_OUTPUT}；<${T.MORALE.STAGE2_MORALE} 人口逃亡 + 流民劫粮；<${T.MORALE.UPRISING_MORALE} 农民起义`,
+  wall:`城墙耐久（上限 ${T.WALL.HP} 点）。按 ×${T.WALL_DEF_SHARE} 折算成防御力`,
+  def:`防御力（点）= 箭塔 + 弩炮 + 城墙耐久 ×${T.WALL_DEF_SHARE}。敌攻超出多少，城墙就掉多少血`,
+}
+
+// ———— 生命周期 ————
+function reset() {
+  s = E.newState()
+  turn = 1
+  alloc = { farm: 15, wood: 9, stone: 4, iron: 2 } // = START.POP，均衡流默认分配
+  plans = []; granaryUsed = false; finished = false; busy = false
+  logLines = []
+  fx.charge = -1; fx.floats = []; fx.shake = 0; fx.flash = 0; fx.routed = 0
+  $('over').classList.add('hidden')
+  pushLog('守城开始。第 2、3、4 回合末有游骑袭扰，第 6 回合总攻。', 't')
+  render(); renderLog()
+}
+
+function clampAlloc() {
+  const sum = () => alloc.farm + alloc.wood + alloc.stone + alloc.iron
+  while (sum() > s.pop) { // 人口缩水（逃亡/起义）时把超编的人从最大的岗位裁下来
+    const k = Object.keys(alloc).reduce((a, b) => (alloc[a] >= alloc[b] ? a : b))
+    if (alloc[k] > 0) alloc[k]--; else break
+  }
+}
+
+const reserved = () => {
+  const r = {}
+  for (const p of plans) for (const k in p.cost) r[k] = (r[k] || 0) + p.cost[k]
+  return r
+}
+const canAfford = (cost) => {
+  const r = reserved()
+  return Object.keys(cost).every((k) => Math.floor(s[k] - (r[k] || 0)) >= cost[k])
+}
+
+// 影子状态：把本回合指令在副本上跑一遍。
+// 这是「点了这些按钮到底有什么影响」的直接答案——玩家不该靠想象。
+function preview() {
+  const sh = Object.assign({}, s, { fields: s.fields.slice() })
+  for (const p of plans) {
+    let ok = true
+    for (const k in p.cost) if (sh[k] < p.cost[k]) ok = false
+    if (!ok) continue
+    for (const k in p.cost) sh[k] -= p.cost[k]
+    p.run(sh)
+  }
+  return sh
+}
+
+function addPlan(a) {
+  if (finished || busy) return
+  if (a.enabled && !a.enabled()) return
+  if (!canAfford(a.cost)) return
+  if (a.immediate) { a.run(s); renderLog(); render(); return }
+  plans.push(a)
+  render()
+}
+
+// ———— 回合结束：produce → 指令队列 → 敌情（演出）→ 民意（与 simulate.js 同序）————
+function endTurn() {
+  if (finished || busy) return
+  pushLog(`—— 第 ${turn} 回合 · 快进 10 天 ——`, 't')
+
+  E.produce(s, alloc)
+  flushLog()
+  for (const p of plans) {
+    if (E.tryBuild(s, p.cost)) { p.run(s); pushLog('✓ ' + p.label + '：' + (p.gain || ''), 'good') }
+    else pushLog('✗ ' + p.label + '：资源不足，未执行', 'warn')
+  }
+  clampAlloc()
+  renderLog()
+
+  // 敌情：先记下战前快照，结算完算出差值，交给演出层播
+  const w0 = s.wallHP, g0 = s.grain, f0 = s.fields.length
+  const riders = turn === T.ASSAULT.TURN ? T.ASSAULT.RIDERS : raidThisTurn()
+  const r = E.enemyPhase(s, turn)
+  const dmg = w0 - s.wallHP, stolen = g0 - s.grain, burned = f0 - s.fields.length
+
+  const afterBattle = () => {
+    flushLog()
+    if (turn === T.ASSAULT.TURN) { finish(r); return }
+    const m = E.moralePhase(s)
+    flushLog()
+    if (m || s.wallHP <= 0) { finish(m || 'lose'); return }
+    turn++
+    plans = []; granaryUsed = false; s.fire = false
+    render()
+  }
+
+  if (!riders) { afterBattle(); return }
+  playBattle({ riders, dmg, stolen, burned, breached: dmg > 0, assault: turn === T.ASSAULT.TURN }, afterBattle)
+}
+
+// ———— 演出：冲锋 → 撞墙 / 被箭雨打散 → 飘字 ————
+// 动画时长是表现参数，不是游戏数值，改它不影响模拟。
+function playBattle(opt, done) {
+  if (NO_ANIM) { done(); return }
+  busy = true
+  fx.skip = false
+  render()
+  const T_CHARG = opt.assault ? 1100 : 800   // 冲锋（同时天数滚动到本回合末）
+  const T_HIT = opt.assault ? 700 : 550      // 撞击 / 被击退
+  const T_FADE = 700                          // 飘字上浮
+  const t0 = performance.now()
+  const day0 = (turn - 1) * T.TURN_DAYS + 1, day1 = turn * T.TURN_DAYS
+  let hit = false
+
+  step()
+  function step() {
+    // 动画是服务不是障碍：任何时候点画面都能跳过
+    if (fx.skip) {
+      fx.charge = -1; fx.riders = 0; fx.floats = []; fx.routed = 0; fx.shake = 0; fx.flash = 0
+      busy = false; done(); return
+    }
+    const t = performance.now() - t0
+    if (t < T_CHARG) {
+      fx.charge = t / T_CHARG
+      fx.day = Math.round(day0 + (day1 - day0) * fx.charge)
+    } else if (t < T_CHARG + T_HIT) {
+      fx.day = day1
+      fx.charge = 1
+      const p = (t - T_CHARG) / T_HIT
+      if (!hit) {
+        hit = true
+        if (opt.breached) {
+          fx.shake = 1
+          fx.flash = 1
+          if (opt.dmg > 0) float(WALL_X + WALL_W / 2, GROUND - 90, `-${Math.round(opt.dmg)} 耐久`, '#ff7a6e')
+          if (opt.stolen > 0) float(WALL_X - 60, GROUND - 60, `-${Math.round(opt.stolen)} 斛粮`, '#ffb36e')
+          if (opt.burned > 0) float(620, GROUND + 20, `${opt.burned} 块田被焚`, '#ff7a6e')
+        } else {
+          fx.routed = 1
+          float(WALL_X - 40, GROUND - 100, '挡住了', '#8ce0a8')
+        }
+      }
+      fx.shake = opt.breached ? Math.max(0, 1 - p) * 7 : 0
+      fx.flash = opt.breached ? Math.max(0, 1 - p) : 0
+      fx.routed = opt.breached ? 0 : p
+    } else {
+      const p = (t - T_CHARG - T_HIT) / T_FADE
+      fx.routed = opt.breached ? 0 : 1
+      for (const f of fx.floats) f.life = 1 - p
+      if (p >= 1) {
+        fx.charge = -1; fx.riders = 0; fx.floats = []; fx.routed = 0; fx.shake = 0; fx.flash = 0
+        busy = false
+        done()
+        return
+      }
+    }
+    drawScene()
+    requestAnimationFrame(step)
+  }
+  fx.riders = opt.riders
+  fx.assault = opt.assault
+}
+function float(x, y, text, color) {
+  fx.floats.push({ x, y, text, color, life: 1 })
+}
+
+function finish(result) {
+  finished = true
+  plans = []
+  const win = result === 'clean' || result === 'barely'
+  const title = { clean:'守住了', barely:'惨胜', lose:'城破' }[result]
+  const why = {
+    clean:'第 60 天总攻被正面挡下——你的剧本写够了。',
+    barely:'墙被撕开但没塌：富余为负，靠城墙耐久硬吃下了缺口。',
+    lose:'防线缺口超过城墙能吸收的极限，或者民意先一步掀翻了城门。',
+  }[result]
+  $('ovTitle').textContent = title
+  $('ovTitle').style.color = win ? 'var(--gold)' : 'var(--danger)'
+  $('ovWhy').textContent = why
+  const rows = [
+    ['总攻防御富余', Math.round(s.margin)],
+    ['城墙剩余', Math.max(0, Math.round(s.wallHP)) + ' / ' + T.WALL.HP],
+    ['箭塔 / 弩炮', s.towers + ' / ' + s.ballistas],
+    ['油坊 / 火攻次数', (s.press ? '已建' : '未建') + ' / ' + s.fires],
+    ['人口', s.pop],
+    ['期末民意', Math.round(s.morale)],
+    ['放粮 / 起义 / 断粮', s.granaries + ' / ' + s.uprisings + ' / ' + s.starvedTurns],
+  ]
+  $('ovTable').innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')
+  $('over').classList.remove('hidden')
+  render()
+}
+
+// ———— 日志 ————
+function pushLog(text, cls) { logLines.push({ text, cls: cls || '' }) }
+function flushLog() {
+  for (const l of s.log) pushLog(l, /⚠|💀/.test(l) ? 'warn' : '')
+  s.log.length = 0
+  renderLog()
+}
+function renderLog() {
+  $('log').innerHTML = logLines.map((l) => `<div class="${l.cls}">${l.text}</div>`).join('')
+  $('log').scrollTop = $('log').scrollHeight
+}
+
+// ———— 情报 ————
+const raidThisTurn = () => {
+  const i = T.RAID.TURNS.indexOf(turn)
+  return i >= 0 ? T.RAID.RIDERS[i] : 0
+}
+const nextRaid = () => {
+  const t = T.RAID.TURNS.find((x) => x >= turn)
+  return t == null ? null : { turn: t, riders: T.RAID.RIDERS[T.RAID.TURNS.indexOf(t)], d: t - turn }
+}
+function intelText() {
+  const n = nextRaid()
+  if (n && n.d === 0) return `游骑 ${n.riders} 骑已到城下：本回合末接战`
+  if (n) return `${n.d} 回合后：游骑 ${n.riders} 骑`
+  if (turn === T.ASSAULT.TURN) return `总攻：${T.ASSAULT.RIDERS} 骑已到城下`
+  return `无敌情——${(T.ASSAULT.TURN - turn) * T.TURN_DAYS} 天后总攻`
+}
+// 总攻我方防御含"剩余油自动倾泻"
+const assaultDefense = () => E.defensePower(s) + (Math.min(s.oil, T.OIL.ASSAULT_CAP) / 10) * T.OIL.ASSAULT_PER10
+
+// ———— 渲染 ————
+function render() {
+  renderHUD(); renderThreat(); renderAlloc(); renderButtons(); renderPlans()
+  if (!busy) drawScene()
+}
+
+function renderHUD() {
+  $('turn').textContent = turn
+  $('totalTurns').textContent = T.TOTAL_TURNS
+  $('day').textContent = (turn - 1) * T.TURN_DAYS + 1
+  $('day2').textContent = turn * T.TURN_DAYS
+  const it = $('intel'); it.textContent = intelText()
+  it.className = 'intel' + (raidThisTurn() || turn === T.ASSAULT.TURN ? ' hot' : '')
+
+  // 每个数字都必须带单位：没有单位的数字对玩家来说只是噪音
+  const LABEL = { pop:'人口', morale:'民心', wall:'城墙', def:'防御力' }
+  const SUFFIX = { morale:'/100', wall:'/' + T.WALL.HP + ' 耐久', def:'点' }
+  const chips = [
+    { k:'grain', v:Math.floor(s.grain) }, { k:'wood', v:Math.floor(s.wood) },
+    { k:'stone', v:Math.floor(s.stone) }, { k:'iron', v:Math.floor(s.iron) },
+    { k:'oil', v:Math.floor(s.oil) },     { k:'pop', v:s.pop },
+    { k:'morale', v:Math.round(s.morale) },
+    { k:'wall', v:Math.max(0, Math.round(s.wallHP)) },
+    { k:'def', v:Math.round(E.defensePower(s)) },
+  ]
+  const r = reserved()
+  $('res').innerHTML = chips
+    .map(({ k, v }) => {
+      const res = r[k] || 0
+      const use = RES_USE[k] || ''
+      const unit = RES_UNIT[k] || SUFFIX[k] || ''
+      return `<div class="chip ${k}" title="${use}"><span class="k">${RES_CN[k] || LABEL[k] || k}</span>` +
+        `<span class="v">${v}</span><span class="u">${unit}</span>` +
+        `${res ? `<span class="r">已排 -${Math.round(res)}</span>` : ''}</div>`
+    })
+    .join('')
+  $('guide').innerHTML = guideRows()
+
+  const m = T.MORALE
+  const stage = s.morale < m.UPRISING_MORALE ? '起义线' : s.morale < m.STAGE2_MORALE ? '治安恶化：人口逃亡、流民劫粮' : s.morale < m.STAGE1_MORALE ? `产值 ×${m.STAGE1_OUTPUT}`
+    : ''
+  $('footHint').textContent = stage ? `⚠ 民意 ${Math.round(s.morale)}：${stage}` : ''
+}
+
+// 威胁对照条：把防御值翻译成「挡不挡得住 / 还差几座塔」，并实时反映本回合指令的效果
+function renderThreat() {
+  const sh = preview()
+  const defNow = E.defensePower(s)
+  const defPlan = E.defensePower(sh)
+  const rows = []
+  const n = nextRaid()
+  if (n) {
+    const atk = n.riders * T.RAID.ATK_PER_RIDER
+    rows.push(threatRow(
+      `${n.d === 0 ? '本回合末接战' : n.d + ' 回合后抵达'} · 游骑 ${n.riders} 骑`,
+      `敌军 ${n.riders} 人，攻击力 ${atk} 点`,
+      atk, defNow, defPlan,
+      `火攻：${T.OIL.FIRE_COST} 桶火油 → 敌军攻击力 ×${T.OIL.FIRE_ATK_MULT}，且农田不会被烧`
+    ))
+  }
+  const aAtk = T.ASSAULT.RIDERS * T.ASSAULT.ATK_PER_RIDER
+  const dumped = Math.min(s.oil, T.OIL.ASSAULT_CAP)
+  const left = (T.ASSAULT.TURN - turn) * T.TURN_DAYS
+  rows.push(threatRow(
+    `第 ${T.ASSAULT.TURN} 回合总攻 ${T.ASSAULT.RIDERS} 骑 · 还有 ${left} 天`,
+    `敌军 ${T.ASSAULT.RIDERS} 人，攻击力 ${aAtk} 点`,
+    aAtk, defNow + (dumped / 10) * T.OIL.ASSAULT_PER10, defPlan + (dumped / 10) * T.OIL.ASSAULT_PER10,
+    `剩余火油会在总攻自动倾泻：${dumped} 桶 = ${Math.round((dumped / 10) * T.OIL.ASSAULT_PER10)} 点防御力`,
+    true
+  ))
+  $('threat').innerHTML = rows.join('')
+}
+
+function threatRow(who, whatIs, atk, defNow, defPlan, note, isAssault) {
+  const gap = defPlan - atk
+  const ok = gap >= 0
+  const delta = defPlan - defNow
+  // 缺口换算成玩家能直接执行的东西：几座箭塔 / 多少石料
+  const need = ok ? '' : `还差 ${Math.ceil(-gap / T.TOWER.DEF)} 座箭塔`
+    + `（或 ${Math.ceil(-gap / T.WALL_DEF_SHARE / T.WALL.REPAIR_HP_PER_STONE)} 块石料修墙）`
+  const pct = Math.max(2, Math.min(100, (defPlan / atk) * 100))
+  const defText = Math.abs(delta) >= 1
+    ? `我方防御力 ${Math.round(defNow)} → <b>${Math.round(defPlan)} 点</b>（本回合指令 ${delta > 0 ? '+' : ''}${Math.round(delta)}）`
+    : `我方防御力 ${Math.round(defNow)} 点`
+  return `<div class="trow ${isAssault ? 'assault' : ''}">
+    <span class="who">${who}</span>
+    <span class="vs">${whatIs}　${defText}</span>
+    <span class="bar"><i class="${ok ? '' : 'bad'}" style="width:${pct}%"></i></span>
+    <span class="verdict ${ok ? 'ok' : 'bad'}">${ok ? '富余 +' + Math.round(gap) + ' 点' : '缺口 ' + Math.round(gap) + ' 点'}</span>
+    <span class="todo">${ok ? (isAssault ? '守得住' : '挡得住') : need}</span>
+  </div>
+  <div class="trow" style="margin-top:-4px"><span class="hint">${note}</span></div>`
+}
+
+function renderAlloc() {
+  const keys = [['farm', '农田'], ['wood', '伐木'], ['stone', '采石'], ['iron', '采矿']]
+  const sum = alloc.farm + alloc.wood + alloc.stone + alloc.iron
+  $('idle').textContent = `待业 ${Math.max(0, s.pop - sum)} / ${s.pop}`
+  $('alloc').innerHTML = keys
+    .map(([k, lab]) => {
+      const per = k === 'farm'
+        ? `${alloc[k]} 人 / 田可容 ${s.fields.length * T.FIELD.WORK_CAP}`
+        : `${alloc[k]} 人 → +${alloc[k] * T.WORKER[k.toUpperCase()]} ${RES_CN[k === 'wood' ? 'wood' : k === 'stone' ? 'stone' : 'iron']}/回合`
+      return `<div class="row"><span class="lab">${lab}</span>
+        <input type="range" min="0" max="${s.pop}" value="${alloc[k]}" data-k="${k}" />
+        <span class="n">${alloc[k]}</span></div>
+        <div class="hint" style="margin:-2px 0 2px 60px;font-size:11px">${per}</div>`
+    })
+    .join('')
+  $('alloc').querySelectorAll('input').forEach((el) => {
+    el.oninput = () => setAlloc(el.dataset.k, +el.value)
+  })
+}
+
+function setAlloc(k, v) {
+  const others = Object.keys(alloc).filter((x) => x !== k)
+  const usedByOthers = others.reduce((a, x) => a + alloc[x], 0)
+  alloc[k] = Math.max(0, Math.min(v, s.pop - usedByOthers))
+  render()
+}
+
+function renderButtons() {
+  const lock = finished || busy
+  $('buildBtns').innerHTML = ACTIONS.map((a) => {
+    const off = lock || (a.enabled && !a.enabled()) || !canAfford(a.cost)
+    return `<button data-a="${a.key}" title="${a.tip}" ${off ? 'disabled' : ''}>${a.label}
+      <span class="c">${costText(a.cost)}</span></button>`
+  }).join('')
+  $('buildBtns').querySelectorAll('button').forEach((b) => {
+    b.onclick = () => addPlan(ACTIONS.find((a) => a.key === b.dataset.a))
+  })
+
+  const raid = raidThisTurn()
+  const fireOk = !lock && raid > 0 && s.oil >= T.OIL.FIRE_COST
+  const granaryOk = !lock && !granaryUsed && s.grain >= T.MORALE.GRANARY_COST_GRAIN
+  $('actBtns').innerHTML = `
+    <button id="bFire" class="${s.fire ? 'on' : 'danger'}" ${fireOk ? '' : 'disabled'}
+      title="敌攻 ×${T.OIL.FIRE_ATK_MULT}，且农田免疫焚烧——${raid ? `本回合 ${raid} 骑` : '无敌情时点了没用'}">
+      ${s.fire ? '🔥 火攻已备（取消）' : '🔥 点火'} ${T.OIL.FIRE_COST} 桶</button>
+    <button id="bGran" ${granaryOk ? '' : 'disabled'}
+      title="每回合限 1 次。民心 <${T.MORALE.STAGE1_MORALE} 起全产出打折，<${T.MORALE.UPRISING_MORALE} 会起义">
+      开仓放粮 ${T.MORALE.GRANARY_COST_GRAIN} 斛 → 民心 +${T.MORALE.GRANARY_GAIN}</button>`
+  $('bFire').onclick = () => { s.fire = !s.fire; render() }
+  $('bGran').onclick = () => {
+    if (E.openGranary(s, Infinity, 0)) { granaryUsed = true; flushLog(); render() }
+  }
+  $('clearPlans').onclick = () => { plans = []; render() }
+  $('end').disabled = lock
+  $('end').textContent = busy ? '接战中…' : '结束回合 · 快进 10 天'
+}
+const costText = (c) =>
+  Object.keys(c).map((k) => (RES_CN[k] || k) + c[k] + (RES_UNIT[k] || '')).join(' ')
+
+function renderPlans() {
+  if (!plans.length) {
+    $('plans').innerHTML =
+      '<li style="color:var(--faint)">（空）—— 点上方按钮排本回合要做的事；排完这里会显示「执行后会变成什么」</li>'
+    return
+  }
+  const sh = preview()
+  const items = plans
+    .map((p) => `<li>${p.label}<span>${p.gain || ''} · ${costText(p.cost)}</span></li>`)
+    .join('')
+  const cmp = (label, a, b, unit) =>
+    Math.abs(a - b) < 1 ? '' : `<span class="cmp">${label} ${Math.round(a)} → <b>${Math.round(b)}</b> ${unit}</span>`
+  const deltas = [
+    cmp('防御力', E.defensePower(s), E.defensePower(sh), '点'),
+    cmp('城墙', s.wallHP, sh.wallHP, '耐久'),
+    cmp('粮', s.grain, sh.grain, RES_UNIT.grain),
+    cmp('木材', s.wood, sh.wood, RES_UNIT.wood),
+    cmp('石料', s.stone, sh.stone, RES_UNIT.stone),
+    cmp('铁', s.iron, sh.iron, RES_UNIT.iron),
+    cmp('人口', s.pop, sh.pop, RES_UNIT.pop),
+    cmp('田', s.fields.length, sh.fields.length, '块'),
+  ].filter(Boolean).join('')
+  $('plans').innerHTML = items +
+    `<li class="after">本回合执行后：${deltas || '无变化'}</li>`
+}
+
+// 指标说明：从 TUNING 派生，不手写第二份数字
+function guideRows() {
+  const rows = [
+    ['粮（斛）', RES_USE.grain],
+    ['木材（根）', RES_USE.wood],
+    ['石料（块）', RES_USE.stone],
+    ['铁（斤）', RES_USE.iron],
+    ['火油（桶）', RES_USE.oil],
+    ['人口（人）', RES_USE.pop],
+    ['民心（0–100）', RES_USE.morale],
+    ['城墙耐久（点）', RES_USE.wall],
+    ['防御力（点）', RES_USE.def],
+    ['敌军攻击力（点）', `游骑 ${T.RAID.ATK_PER_RIDER} 点/骑 · 总攻 ${T.ASSAULT.ATK_PER_RIDER} 点/骑。攻防差值 = 城墙掉多少血`],
+    ['一回合 = 10 天', `共 ${T.TOTAL_TURNS} 回合 ${T.TOTAL_TURNS * T.TURN_DAYS} 天，第 ${T.ASSAULT.TURN} 回合总攻`],
+  ]
+  return rows.map(([k, v]) => `<tr><td class="gk">${k}</td><td>${v}</td></tr>`).join('')
+}
+
+// ———— Canvas：侧视剖面。城外威胁与城内农田同框对立（fun hypothesis 的空间表达）————
+function drawScene() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, W, H)
+  if (fx.shake > 0) ctx.translate((Math.random() - .5) * fx.shake, (Math.random() - .5) * fx.shake * .5)
+
+  const sky = ctx.createLinearGradient(0, 0, 0, GROUND)
+  sky.addColorStop(0, '#131722'); sky.addColorStop(1, '#232a38')
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, GROUND)
+  ctx.fillStyle = '#1d1a16'; ctx.fillRect(0, GROUND, W, H - GROUND)
+  ctx.strokeStyle = '#2c2a26'; ctx.beginPath()
+  ctx.moveTo(0, GROUND + .5); ctx.lineTo(W, GROUND + .5); ctx.stroke()
+
+  ctx.fillStyle = '#1a2030' // 远山
+  ctx.beginPath(); ctx.moveTo(0, GROUND)
+  for (let x = 0; x <= 460; x += 46) {
+    const h = 34 + 22 * Math.sin(x / 61) + 12 * Math.sin(x / 23)
+    ctx.lineTo(x, GROUND - h)
+  }
+  ctx.lineTo(460, GROUND); ctx.closePath(); ctx.fill()
+
+  drawRaiders(); drawFields(); drawWall(); drawPress()
+  if (fx.charge >= 0) drawDay() // 「快进 10 天」不能是一瞬间：让天数跟着冲锋一起滚
+  drawFloats()
+}
+
+function drawDay() {
+  ctx.font = 'bold 26px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillStyle = 'rgba(214,171,85,.9)'
+  ctx.fillText(`第 ${fx.day} 天`, W / 2, 38)
+  ctx.font = '11px sans-serif'
+  ctx.fillStyle = '#8f97a6'
+  ctx.fillText('点击画面跳过', W / 2, 56)
+  ctx.textAlign = 'left'
+}
+
+// 敌人不再"回合末凭空出现"：按抵达回合在城外推进，安全期也能看见它一天天变近
+function drawRaiders() {
+  if (fx.charge >= 0) { drawCharge(); return }
+
+  const n = nextRaid()
+  const assaultSoon = T.ASSAULT.TURN - turn
+  // 总攻大军：也在逼近，第 5 回合就能看到地平线上的黑影
+  if (assaultSoon <= 1) {
+    const x = assaultX()
+    ctx.globalAlpha = assaultSoon === 0 ? 1 : .85
+    drawRiderRow(T.ASSAULT.RIDERS, x, GROUND - 4, '#b8534a')
+    ctx.globalAlpha = 1
+    ctx.fillStyle = '#e79b8f'; ctx.font = 'bold 13px sans-serif'
+    ctx.fillText(assaultSoon === 0 ? `总攻 ${T.ASSAULT.RIDERS} 骑` : `总攻大军（${assaultSoon} 回合后）`, 24, 24)
+    return
+  }
+  if (!n) return
+  const d = n.d
+  const x = Math.max(18, RAMPART - d * 96)
+  ctx.globalAlpha = d === 0 ? 1 : .45 + .2 * (2 - Math.min(d, 2))
+  drawRiderRow(n.riders, x, GROUND - 4, d === 0 ? '#c1695c' : '#6d564c')
+  ctx.globalAlpha = 1
+  ctx.fillStyle = d === 0 ? '#e79b8f' : '#8f97a6'; ctx.font = '12px sans-serif'
+  ctx.fillText(d === 0 ? `游骑 ${n.riders} 骑 · 本回合末接战` : `${n.riders} 骑 · ${d} 回合后抵达`, x, GROUND - 52)
+}
+const assaultX = () => Math.max(18, RAMPART - (T.ASSAULT.TURN - turn) * 96)
+
+function drawCharge() {
+  const x = 18 + (RAMPART - 18) * fx.charge
+  const alpha = fx.routed > 0 ? 1 - fx.routed : 1
+  ctx.globalAlpha = Math.max(0, alpha)
+  drawRiderRow(fx.riders, x, GROUND - 4, fx.assault ? '#b8534a' : '#c1695c')
+  ctx.globalAlpha = 1
+  if (fx.routed > 0) { // 被击退：箭雨
+    ctx.strokeStyle = 'rgba(220,230,245,.7)'
+    for (let i = 0; i < 24; i++) {
+      const sx = WALL_X + (i % 6) * 5, sy = GROUND - 120 - Math.floor(i / 6) * 8
+      ctx.beginPath(); ctx.moveTo(sx, sy)
+      ctx.lineTo(sx - 60 - i * 3, sy + 26 + (i % 4) * 4); ctx.stroke()
+    }
+  }
+}
+
+function drawRiderRow(n, x0, y, color) {
+  const shown = Math.min(n, 72), cols = 24
+  ctx.fillStyle = color
+  for (let i = 0; i < shown; i++) {
+    const cx = x0 + (i % cols) * 17, cy = y - Math.floor(i / cols) * 15
+    ctx.beginPath()
+    ctx.moveTo(cx, cy - 9); ctx.lineTo(cx + 4, cy); ctx.lineTo(cx - 4, cy)
+    ctx.closePath(); ctx.fill()
+    ctx.fillRect(cx - 1, cy, 2, 5)
+  }
+  if (n > shown) {
+    ctx.fillStyle = '#8f97a6'; ctx.font = '12px sans-serif'
+    ctx.fillText(`×${n}`, x0 + cols * 17 + 6, y - Math.floor((shown - 1) / cols) * 15)
+  }
+}
+
+function drawFields() {
+  const fx0 = 540, fy0 = GROUND + 14, fw = 62, fh = 34, perRow = 6
+  const n = s.fields.length
+  const cap = n * T.FIELD.WORK_CAP
+  const farm = Math.min(alloc.farm, cap)
+  for (let i = 0; i < n; i++) {
+    const x = fx0 + (i % perRow) * (fw + 6)
+    const y = fy0 + Math.floor(i / perRow) * (fh + 8)
+    const su = s.fields[i] === 'su'
+    ctx.fillStyle = su ? '#4a4126' : '#2b3a26'
+    ctx.fillRect(x, y, fw, fh)
+    ctx.strokeStyle = su ? '#8a7440' : '#4d6b42'; ctx.lineWidth = 1
+    ctx.strokeRect(x + .5, y + .5, fw - 1, fh - 1)
+    ctx.strokeStyle = su ? 'rgba(216,171,85,.35)' : 'rgba(140,180,110,.3)'
+    for (let k = 1; k < 4; k++) {
+      ctx.beginPath(); ctx.moveTo(x + 4, y + (fh / 4) * k); ctx.lineTo(x + fw - 4, y + (fh / 4) * k); ctx.stroke()
+    }
+    const per = Math.floor(farm / n) + (i < farm % n ? 1 : 0)
+    ctx.fillStyle = '#cfd4dd'; ctx.font = '11px sans-serif'
+    ctx.fillText(`${su ? '粟' : '麻'} ${Math.min(per, T.FIELD.WORK_CAP)}/${T.FIELD.WORK_CAP}`, x + 4, y + fh - 5)
+  }
+  ctx.fillStyle = '#5f6878'; ctx.font = '11px sans-serif'
+  ctx.fillText(`耕作 ${farm} / 可容 ${cap} 人`, fx0, fy0 - 6)
+}
+
+function drawWall() {
+  const ratio = Math.max(0, s.wallHP) / T.WALL.HP
+  const h = 34 + 116 * ratio
+  const top = GROUND - h
+  const g = ctx.createLinearGradient(WALL_X, top, WALL_X + WALL_W, GROUND)
+  g.addColorStop(0, '#6e6558'); g.addColorStop(1, '#4a443b')
+  ctx.fillStyle = g; ctx.fillRect(WALL_X, top, WALL_W, h)
+  ctx.strokeStyle = 'rgba(0,0,0,.28)'
+  for (let y = top + 8; y < GROUND; y += 12) {
+    ctx.beginPath(); ctx.moveTo(WALL_X, y); ctx.lineTo(WALL_X + WALL_W, y); ctx.stroke()
+  }
+  ctx.strokeStyle = ratio > .5 ? '#8a8272' : ratio > .25 ? '#a08048' : '#b8534a'
+  ctx.strokeRect(WALL_X + .5, top + .5, WALL_W - 1, h - 1)
+  if (fx.flash > 0) { // 挨打时墙泛红
+    ctx.fillStyle = `rgba(216,88,79,${fx.flash * .5})`
+    ctx.fillRect(WALL_X, top, WALL_W, h)
+  }
+
+  ctx.fillStyle = '#22262f'; ctx.fillRect(WALL_X - 12, top, 6, h)
+  ctx.fillStyle = ratio > .5 ? '#5b9fd6' : ratio > .25 ? '#d6ab55' : '#d9584f'
+  ctx.fillRect(WALL_X - 12, top + h * (1 - ratio), 6, h * ratio)
+
+  ctx.fillStyle = '#8f97a6'; ctx.font = '11px sans-serif'
+  ctx.fillText(`城墙 ${Math.max(0, Math.round(s.wallHP))} 耐久`, WALL_X - 14, GROUND + 16)
+
+  let bx = WALL_X + WALL_W + 8
+  const towerN = Math.min(s.towers, 8)
+  for (let i = 0; i < towerN; i++) {
+    ctx.fillStyle = '#7a6a52'; ctx.fillRect(bx, top - 14, 12, 14)
+    ctx.fillStyle = '#8f7c5e'; ctx.beginPath()
+    ctx.moveTo(bx - 2, top - 14); ctx.lineTo(bx + 6, top - 22); ctx.lineTo(bx + 14, top - 14)
+    ctx.closePath(); ctx.fill()
+    bx += 16
+  }
+  if (s.towers > towerN) { ctx.fillStyle = '#8f97a6'; ctx.fillText(`+${s.towers - towerN}`, bx, top - 4); bx += 22 }
+  for (let i = 0; i < Math.min(s.ballistas, 4); i++) {
+    ctx.fillStyle = '#5f6b7d'; ctx.fillRect(bx, top - 10, 16, 10)
+    ctx.strokeStyle = '#93a3b8'; ctx.beginPath()
+    ctx.moveTo(bx + 2, top - 14); ctx.lineTo(bx + 14, top - 4); ctx.stroke()
+    bx += 20
+  }
+  ctx.fillStyle = '#5f6878'; ctx.font = '11px sans-serif'
+  ctx.fillText(`箭塔 ${s.towers} 座 · 弩炮 ${s.ballistas} 座 · 防御力 ${Math.round(E.defensePower(s))} 点`, WALL_X + WALL_W + 8, GROUND + 16)
+}
+
+function drawPress() {
+  if (!s.press) return
+  const x = 620, y = GROUND - 26
+  ctx.fillStyle = '#3d3327'; ctx.fillRect(x, y, 26, 26)
+  ctx.fillStyle = '#cf8a3c'; ctx.fillRect(x + 4, y + 6, 18, 12)
+  ctx.fillStyle = '#8f97a6'; ctx.font = '11px sans-serif'
+  ctx.fillText(`油坊 · 存油 ${Math.floor(s.oil)} 桶`, x - 2, y - 6)
+}
+
+function drawFloats() {
+  ctx.font = 'bold 15px sans-serif'
+  ctx.textAlign = 'center'
+  for (const f of fx.floats) {
+    ctx.globalAlpha = Math.max(0, Math.min(1, f.life))
+    ctx.fillStyle = f.color
+    ctx.fillText(f.text, f.x, f.y - (1 - f.life) * 26)
+  }
+  ctx.globalAlpha = 1
+  ctx.textAlign = 'left'
+}
+
+// ———— 绑定 ————
+cv.onclick = () => { if (busy) fx.skip = true } // 演出随时可跳过：玩家永远握有控制权
+$('end').onclick = endTurn
+$('restart').onclick = reset
+$('ovAgain').onclick = reset
+reset()
+</script>
+</body>
+</html>
