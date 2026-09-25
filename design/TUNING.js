@@ -1,11 +1,11 @@
-// TUNING.js —— 长城守城 · 全游戏唯一数字来源 v0.5-paper（模拟校准版）
+// TUNING.js —— 长城守城 · 全游戏唯一数字来源 v0.8-paper（模拟校准版）
 // 纪律：
 //   1) demo 与模拟脚本只从这里读数，代码里不允许出现第二个数字；
 //   2) 每个数字必须带 rationale，未经 playtest / 模拟验证的一律标 [PLACEHOLDER]；
 //   3) 改手感只改这里，改完跑 `node simulate.js` 验证数学，再刷新 demo 看手感。
 
 const TUNING = {
-  VERSION: '0.7-paper',
+  VERSION: '0.8-paper',
 
   // —— 时间结构 ——
   TURN_DAYS: 10,        // 一回合=10天：6回合一局，目标单局≤15分钟（中度策略节奏）
@@ -80,8 +80,8 @@ const TUNING = {
     WELL_FED_SURPLUS: 10,   // 回合结束人均盈余粮≥10 → 仓廪实而知礼节
     WELL_FED_GAIN: 3,       // [PLACEHOLDER] 丰年+3：农业流天然回血，但回不过衰减+事件，放粮仍是刚需
     STARVE_HIT: 25,         // [PLACEHOLDER] 断粮(grain<0)-25：饿肚子是民变第一因，重锤但一回合可恢复
-    BREACH_HIT: 10,         // [PLACEHOLDER] 袭扰破防(gap>0)-10：敌人打到家门口，人心浮动
-    BURN_HIT: 8,            // [PLACEHOLDER] 每烧1田-8：烧的是全家口粮来源，比单纯破墙更伤人心
+    BREACH_HIT: 0,          // [v0.8 结论①A方案] 10→0：民意只吃"人的事"（断粮/招人/口粮比），破防/烧田归城墙血条管——否则民意条沦为城墙血条的复读机
+    BURN_HIT: 0,            // [v0.8 结论①A方案] 8→0：同上，防御管外敌、民管内政，两系统不再扣同一笔钱
     GRANARY_COST_GRAIN: 30, // 开仓放粮价格：≈15人一回合口粮——放粮和招人直接抢粮，这就是核心决策
     GRANARY_GAIN: 10,       // [PLACEHOLDER] 放粮+10，每回合限1次：净+6/回合(10-4衰减)，3回合拉回30点，救火够用但不瞬回
     STAGE1_MORALE: 50,      // 阶段一阈值：产值降低线
@@ -94,7 +94,7 @@ const TUNING = {
     REBEL_WALL_DMG_SHARE: 0.5, // [PLACEHOLDER] 起义破防→墙损转化0.5：比总攻(1.0)仁慈——内乱是消耗战不是攻城战
     REBEL_BURN_FIELDS: 1,   // 起义破防烧1田：和外敌同一惩罚语言，学一次就懂
     REBEL_POP_LOSS_PCT: 0.1, // [PLACEHOLDER] 起义必损10%人口(无论成败)：死人不会回来，起义永远真疼
-    AFTER_UPRISING_MORALE: 25, // 起义后民意重置到25：怨气随流血释放，给绝境玩家一条爬回来的路（但也可能连环起义）
+    AFTER_UPRISING_MORALE: 40, // [v0.8 结论②] 25→40：原缓冲(40-15=25)已超过单次事件最大损伤，且放粮净回复(+6/回合)能追上失血——起义从"死亡螺旋"变"可逆的警钟"，放粮成为真救火手段而非安慰剂
   },
 
   // —— 油料 [v0.6 新系统·PLACEHOLDER] ——
