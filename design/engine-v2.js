@@ -30,7 +30,12 @@
         wood: T.START.WOOD,
         stone: T.START.STONE,
         iron: T.START.IRON,
-        earth: T.START.EARTH,
+        earth: { sha: 0, hui: 0, huang: 0 }, // 三种土=分开物资（拍板：理解甲）
+        workshopLv: 1,  // 土坊等级：1级砂/2级灰/3级黄（升坊解锁，科技树后续挂钩）
+        morale: T.MORALE.START,
+        owedDays: 0,         // 连续欠饷天数
+        owedNow: false,      // 当天欠饷（驻守减半）
+        faminePeriod: false, // 本民心结算期(10天)内断粮过
         civ: T.START.CIV, // 平民（生产）
         sol: T.START.SOL, // 兵（驻守/肉搏）
         fields: Array(T.START.FIELDS).fill('su'), // 'su' 粟 | 'ma' 麻
@@ -43,6 +48,7 @@
         breaches: 0,     // 敌人摸到墙根的次数
         trimsTotal: 0,   // 累计削骑数
         solLost: 0,      // 累计损兵
+        granaries: 0,    // 累计放粮次数
         // demo 用
         log: [],
       }
@@ -91,32 +97,59 @@
       const w = alloc.wood * T.PROD.WOOD_PER * pw * jit(1, 0.1)
       const st = alloc.stone * T.PROD.STONE_PER * pw * jit(1, 0.1)
       const mi = alloc.iron * T.PROD.IRON_PER * pw * jit(1, 0.1)
-      const e = alloc.earth * T.PROD.EARTH_PER * pw * jit(1, 0.1)
+      // 挖土：三种土分开物资，派工指定挖哪种（坊等级=解锁上限，由派工自律）
+      const dig = (n, tier) => {
+        const amt = (n || 0) * T.PROD.EARTH_PER * pw * jit(1, 0.1)
+        s.earth[tier] += amt
+        return amt
+      }
+      const e = dig(alloc.earthSha, 'sha') + dig(alloc.earthHui, 'hui') + dig(alloc.earthHuang, 'huang')
       s.grain += g
       s.wood += w
       s.stone += st
       s.iron += ir + mi
-      s.earth += e
 
-      // 口粮：平民 0.2 / 兵 0.3
-      const eat = s.civ * T.PROD.EAT_CIV + s.sol * T.PROD.EAT_SOL
+      // 口粮与军饷（拍板：兵 0.3 = 同一粮仓扣更多）
+      const eatCiv = s.civ * T.PROD.EAT_CIV
+      const eatSol = s.sol * T.PROD.EAT_SOL
+      const eat = eatCiv + eatSol
       s.grain -= eat
-
       s.log.push(
         `第${s.day}天：粮 +${r1(g)}-${r1(eat)} 斛　木 +${r1(w)}　石 +${r1(st)}　铁 +${r1(ir + mi)} 斤　土 +${r1(e)} 方` +
           (eff < 1 ? `（耕作效率 ${Math.round(eff * 100)}%）` : '') +
           (pw > 1.001 ? `（超编损耗 ${Math.round((pw - 1) * 100)}%）` : '')
       )
-
-      // 断粮：库存归零 + 每天逃亡 2% 平民（兵有军纪不逃）
+      s.owedNow = false
       if (s.grain < 0) {
-        s.grain = 0
-        s.starved = true
-        s.starveDays++
-        const gone = Math.max(1, Math.ceil(s.civ * T.STARVE.DESERT_PCT))
-        s.civ = Math.max(0, s.civ - gone)
-        s.log.push(`⚠ 断粮：${gone} 人逃亡`)
+        if (s.grain + eatSol >= 0 && eatSol > 0) {
+          // 粮够平民口粮、不够军饷 → 欠饷（警告档：当天驻守效率减半）
+          s.grain = 0
+          s.owedNow = true
+          s.owedDays++
+          if (s.owedDays >= T.ARMY.OWED_DESERT_DAY) {
+            // 失控档：连欠 3 天起，兵每天逃 10%
+            const gone = Math.max(1, Math.floor(s.sol * T.ARMY.OWED_DESERT_PCT))
+            s.sol = Math.max(0, s.sol - gone)
+            s.log.push(`⚠ 连续欠饷 ${s.owedDays} 天：${gone} 名兵逃亡（剩 ${s.sol}）`)
+          } else {
+            s.log.push(`⚠ 欠饷：驻守效率减半`)
+          }
+        } else {
+          // 断粮：库存归零 + 每天逃亡 2% 平民（兵不因断粮逃，走欠饷线）
+          s.grain = 0
+          s.starved = true
+          s.faminePeriod = true
+          s.starveDays++
+          const gone = Math.max(1, Math.ceil(s.civ * T.STARVE.DESERT_PCT))
+          s.civ = Math.max(0, s.civ - gone)
+          s.log.push(`⚠ 断粮：${gone} 人逃亡`)
+        }
+      } else {
+        s.owedDays = 0
       }
+
+      // 民心结算：每 10 天，与人口水龙头同步（拍板）
+      if (s.day % 10 === 0) moraleSettle(s)
     }
 
     // ———— 通用扣费 ————
@@ -145,29 +178,67 @@
       s.log.push(`建弩炮 ×1（共 ${s.ballistas} 座，需兵 ${crewNeeded(s)}）`)
       return true
     }
-    // 升墙重夯：扣土+石，耐久按新旧上限比例折算（不白干也不免费）
-    function upgradeWall(s) {
+    // 修墙（拍板细则）：一次修墙只用一种土；差土不能修好墙；好土修差墙=升档（升墙唯一方式）
+    // 升档：上限变新档、当前血量不变；升档需一次性投入 PROMOTE_MIN_EARTH 方该档土（草案，待模拟）
+    // 返回消耗的方数（0=没干成；升档本身不回血，之后继续用该档土补血）
+    function repairWall(s, tier, earthBudget) {
       const order = ['sha', 'hui', 'huang']
-      const idx = order.indexOf(s.wallTier)
-      if (idx >= order.length - 1) return false
-      const next = order[idx + 1]
-      const cost = T.WALL.UPGRADE[next]
-      if (!tryPay(s, { earth: cost.earth, stone: cost.stone })) return false
-      const oldCap = wallCap(s), newCap = T.WALL.TIERS[next].cap
-      s.wallHP = Math.min(newCap, Math.round((s.wallHP / oldCap) * newCap))
-      s.wallTier = next
-      s.log.push(`城墙重夯为${T.WALL.TIERS[next].name}（耐久 ${r1(s.wallHP)}/${newCap}）`)
+      const wallIdx = order.indexOf(s.wallTier)
+      const useIdx = order.indexOf(tier)
+      if (useIdx < 0 || useIdx < wallIdx) return 0 // 差土不能修好墙
+      if (!s.earth[tier] || s.earth[tier] <= 0) return 0
+      if (useIdx > wallIdx) {
+        const minE = T.WALL.PROMOTE_MIN_EARTH
+        if (s.earth[tier] < minE) return 0 // 好土不够升档门槛 → 拒绝
+        s.earth[tier] -= minE
+        s.wallTier = tier
+        s.log.push(`▲ 墙升档为${T.WALL.TIERS[tier].name}（上限 ${wallCap(s)}，血量不变 ${r1(s.wallHP)}）`)
+      }
+      const missing = wallCap(s) - s.wallHP
+      if (missing <= 0) return 0 // 只升档不补血
+      const budget = earthBudget == null ? s.earth[tier] : Math.min(s.earth[tier], earthBudget)
+      const earths = Math.min(budget, Math.ceil(missing / T.WALL.TIERS[tier].hpPerEarth))
+      s.earth[tier] -= earths
+      s.wallHP = Math.min(wallCap(s), s.wallHP + earths * T.WALL.TIERS[tier].hpPerEarth)
+      return earths
+    }
+
+    // 升坊：解锁更高档的土（拍板：只花木+石；科技树挂钩后续接入，本版直连）
+    function upgradeWorkshop(s) {
+      const next = s.workshopLv + 1
+      const cost = T.WORKSHOP.COSTS[next]
+      if (!cost || !tryPay(s, cost)) return false
+      s.workshopLv = next
+      const unlock = ['', '', '灰土', '黄土'][next]
+      s.log.push(`▲ 土坊升到 ${next} 级（可挖${unlock}）`)
       return true
     }
-    // 修墙：土 → 耐久，效率=当前档（灰 12 / 黄 20 / 砂 6）
-    function repair(s, earthBudget) {
-      const missing = wallCap(s) - s.wallHP
-      if (missing <= 0 || s.earth <= 0) return 0
-      const budget = earthBudget == null ? s.earth : Math.min(s.earth, earthBudget)
-      const earths = Math.min(budget, Math.ceil(missing / hpPerEarth(s)))
-      s.earth -= earths
-      s.wallHP = Math.min(wallCap(s), s.wallHP + earths * hpPerEarth(s))
-      return earths
+
+    // 放粮（拍板）：−30 粮 → +10 民心，手动杠杆即时生效
+    function openGranary(s) {
+      const M = T.MORALE
+      if (s.grain < M.GRANARY_OPEN_COST) return false
+      s.grain -= M.GRANARY_OPEN_COST
+      s.morale = Math.min(100, s.morale + M.GRANARY_OPEN_GAIN)
+      s.granaries++
+      return true
+    }
+
+    // 民心结算（每 10 天，拍板）：四来源打分 → 水龙头放人
+    function moraleSettle(s) {
+      const M = T.MORALE
+      let m = s.morale
+      if (s.grain >= pop(s) * M.GRANARY_PER_CAP) m += M.GRANARY_GAIN // 仓廪实 +
+      if (s.faminePeriod) m -= M.FAMINE_HIT                          // 断粮 −
+      if (s.wallHP < wallCap(s) * 0.5) m -= M.WALL_HIT               // 墙血<50% −
+      s.morale = Math.max(0, Math.min(100, m))
+      const tap = M.TAP.find((t) => s.morale >= t.min)
+      let delta = tap.add
+      if (s.faminePeriod) delta -= M.FAMINE_POP_LOSS // 期内断粮 −2 人
+      if (delta > 0) s.civ += delta
+      else if (delta < 0) s.civ = Math.max(0, s.civ + delta)
+      s.faminePeriod = false
+      return delta
     }
 
     // ———— 征兵 / 退伍 ————
@@ -184,17 +255,7 @@
       s.civ += k
       return k
     }
-    // 招流民：粮换平民。keepGrain = 招完后想保住的口粮底线（策略的心理安全线）
-    function buySettlers(s, keepGrain, max) {
-      const limit = max == null ? 5 : max // 每天至多招 5 人：时间线变长后，单日无上限会瞬间吞光粮
-      let n = 0
-      while (s.grain - T.PROD.GRAIN_PER_SETTLER >= keepGrain && n < limit) {
-        s.grain -= T.PROD.GRAIN_PER_SETTLER
-        s.civ++
-        n++
-      }
-      return n
-    }
+    // 招流民（粮买人）机制删除（拍板）：人口增长全走民心
 
     // ———— 战斗（分层）————
     // 流程：削（受 40% 上限 + 驻守率）→ 剩余骑砸墙 → 摸到墙根则惩罚 + 损兵
@@ -212,15 +273,16 @@
         siegePer = EN.RAID_SIEGE_PER_RIDER
       }
 
-      // 1) 远程削弱：上限 40% + 驻守率打折
+      // 1) 远程削弱：上限 40% + 驻守率打折（欠饷当天再减半，拍板）
+      const crew = crewRatio(s) * (s.owedNow ? T.ARMY.OWED_HALF : 1)
       const cap = Math.floor(riders * EN.TRIM_CAP)
-      const raw = trimPower(s) * crewRatio(s)
+      const raw = trimPower(s) * crew
       const trim = Math.min(cap, Math.floor(raw))
       const remaining = riders - trim
       s.trimsTotal += trim
 
       s.log.push(
-        `${isAssault ? '总攻' : '敌情'}：${riders} 骑压境 → 远程削去 ${trim} 骑（驻守率 ${Math.round(crewRatio(s) * 100)}%）→ ${remaining} 骑冲到城下`
+        `${isAssault ? '总攻' : '敌情'}：${riders} 骑压境 → 远程削去 ${trim} 骑（驻守率 ${Math.round(crew * 100)}%${s.owedNow ? '，欠饷减半' : ''}）→ ${remaining} 骑冲到城下`
       )
 
       // 2) 剩余骑砸墙
@@ -234,20 +296,9 @@
         return result
       }
       if (remaining > 0) {
-        // 3) 摸到墙根：破防惩罚（总攻不抢粮不烧田——倾国之战只看墙）+ 贴墙损兵
+        // 3) 摸到墙根：贴墙损兵（抢粮烧田已废除——田全在城内，破防唯一代价=墙血与损兵）
         s.breaches++
         s.breached = true
-        if (!isAssault) {
-          const stolen = Math.min(s.grain, remaining * T.RAID_PENALTY.GRAIN_STEAL_PER_RIDER)
-          s.grain -= stolen
-          if (s.fields.length > 1 && T.RAID_PENALTY.BURN_FIELDS > 0) {
-            const burn = Math.min(T.RAID_PENALTY.BURN_FIELDS, s.fields.length - 1)
-            s.fields.splice(Math.floor(Math.random() * s.fields.length), burn)
-            s.log.push(`⚠ 破防：粮被抢 -${r1(stolen)} 斛，${burn} 块田被焚`)
-          } else {
-            s.log.push(`⚠ 破防：粮被抢 -${r1(stolen)} 斛`)
-          }
-        }
         const loss = Math.max(remaining > 0 ? 1 : 0, Math.ceil(remaining * T.ARMY.LOSS_SHARE))
         const dead = Math.min(s.sol, loss)
         s.sol -= dead
@@ -275,11 +326,12 @@
       buildField,
       buildTower,
       buildBallista,
-      upgradeWall,
-      repair,
+      upgradeWorkshop,
+      repairWall,
+      openGranary,
+      moraleSettle,
       recruit,
       disband,
-      buySettlers,
       battle,
     }
   }
